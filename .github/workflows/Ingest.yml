@@ -1,0 +1,41 @@
+name: ingest
+
+on:
+  schedule:
+    # Hourly. Not more often: each run wakes the database, and news RSS does
+    # not move fast enough to justify the compute.
+    - cron: "0 * * * *"
+  # Lets you run this by hand from the Actions tab instead of waiting an hour
+  # to find out whether it works. Do not remove.
+  workflow_dispatch:
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run migrations
+        env:
+          # Session-mode pooler (port 5432 on pooler.supabase.com).
+          # The plain direct string is IPv6-only and will not resolve here.
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: alembic upgrade head
+
+      - name: Fetch feeds
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: python -m worker.ingest
