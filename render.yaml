@@ -13,7 +13,3 @@ services:
         sync: false
       - key: PYTHON_VERSION
         value: "3.12"
- 
-# Note: migrations deliberately do NOT run here. They run in the GitHub Actions
-# workflow before each ingest, using the session-mode pooler. Running them from
-# a spin-down-prone free web service would be unreliable.

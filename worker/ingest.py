@@ -31,7 +31,7 @@ from common.models import (
 )
 
 FEEDS_FILE = Path(__file__).parent / "feeds.yaml"
-USER_AGENT = "Presswake/0.1 (+https://github.com/YOURNAME/Presswake; you@example.com)"
+USER_AGENT = "Presswake/0.1 (+https://github.com/gragbag/Presswake; firedragon1726@gmail.com)"
 TIMEOUT = 20
 
 

@@ -1,18 +1,188 @@
 # Outlet list. This is the only editorial decision the system makes -- it
-# selects sources, never topics. Start with three to prove the pipeline, then
-# grow toward ~30 at milestone 2.
+# selects sources, never topics.
 #
 # Finding feeds: check /rss or /feeds on the outlet's site, or view-source and
-# look for <link rel="alternate" type="application/rss+xml">.
+# look for <link rel="alternate" type="application/rss+xml">. Many outlets also
+# declare a richer Google News sitemap in robots.txt.
 #
-# Verify each URL returns XML in a browser before adding it here.
+# VERIFY BEFORE ADDING. A feed can return HTTP 200 with well-formed XML and
+# still be abandoned -- CNN's top-stories feed serves items three years old,
+# and WSJ's world feed is eighteen months stale. Check the newest item's
+# timestamp, not the status code.
+#
+# All URLs below verified 2026-08-04: newest item under 8 hours old.
+#
+# Renaming an outlet here does NOT rename it in the database. sync_outlets
+# inserts with ON CONFLICT DO NOTHING on feed_url, so the original name sticks.
+# Changing a URL creates a SECOND outlet row; it does not replace the first.
 
 feeds:
+  # --- High-volume nationals -------------------------------------------
+  # These form the clusters. A story only groups if several outlets cover it,
+  # so the set needs enough breadth for major events to overlap.
+
   - name: NPR News
     url: https://feeds.npr.org/1001/rss.xml
 
-  - name: BBC News (World)
-    url: https://feeds.bbci.co.uk/news/world/rss.xml
+  - name: The New York Times
+    url: https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml
 
-  - name: The Guardian (World)
-    url: https://www.theguardian.com/world/rss
+  - name: CBS News
+    url: https://www.cbsnews.com/latest/rss/main
+
+  - name: NBC News
+    url: http://feeds.nbcnews.com/nbcnews/public/news
+
+  - name: ABC News
+    url: https://abcnews.go.com/abcnews/topstories
+
+  - name: Fox News
+    url: https://moxie.foxnews.com/google-publisher/latest.xml
+
+  - name: PBS NewsHour
+    url: https://www.pbs.org/newshour/feeds/rss/headlines
+
+  - name: Los Angeles Times
+    url: https://www.latimes.com/rss2.0.xml
+
+  - name: CNBC
+    url: https://www.cnbc.com/id/100003114/device/rss/rss.html
+
+  - name: BBC News
+    url: https://feeds.bbci.co.uk/news/rss.xml
+
+  - name: The Guardian
+    url: https://www.theguardian.com/international/rss
+
+  - name: The Independent
+    url: https://www.independent.co.uk/news/uk/rss
+
+  - name: Sky News
+    url: https://feeds.skynews.com/feeds/rss/home.xml
+
+  - name: Daily Mail
+    url: https://www.dailymail.co.uk/articles.rss
+
+  - name: Al Jazeera
+    url: https://www.aljazeera.com/xml/rss/all.xml
+
+  - name: Deutsche Welle
+    url: https://rss.dw.com/rdf/rss-en-all
+
+  - name: France 24
+    url: https://www.france24.com/en/rss
+
+  - name: Euronews
+    url: https://www.euronews.com/rss
+
+  # --- Political and opinion range --------------------------------------
+  # Divergence is the product. A set of only centrist-establishment outlets
+  # would show artificially little of it. Selecting a range is not scoring
+  # one -- no lean rating is stored or displayed anywhere.
+
+  - name: Politico
+    url: https://rss.politico.com/politics-news.xml
+
+  - name: The Hill
+    url: https://thehill.com/news/feed/
+
+  - name: Washington Examiner
+    url: https://www.washingtonexaminer.com/feed
+
+  - name: National Review
+    url: https://www.nationalreview.com/feed/
+
+  - name: Reason
+    url: https://reason.com/feed/
+
+  - name: Breitbart
+    url: https://feeds.feedburner.com/breitbart
+
+  - name: The Intercept
+    url: https://theintercept.com/feed/?rss
+
+  - name: Vox
+    url: https://www.vox.com/rss/index.xml
+
+  - name: The Atlantic
+    url: https://www.theatlantic.com/feed/all/
+
+  - name: Newsweek
+    url: https://www.newsweek.com/rss
+
+  - name: Time
+    url: https://time.com/feed/
+
+  # --- Regional English --------------------------------------------------
+  # The most interesting tier for coverage gaps. National outlets mostly
+  # cover the same major stories; regional ones produce genuine divergence
+  # in what gets covered at all.
+
+  - name: ABC News (Australia)
+    url: https://www.abc.net.au/news/feed/51120/rss.xml
+
+  - name: Sydney Morning Herald
+    url: https://www.smh.com.au/rss/feed.xml
+
+  - name: The Hindu
+    url: https://www.thehindu.com/news/national/feeder/default.rss
+
+  - name: NDTV
+    url: https://feeds.feedburner.com/ndtvnews-top-stories
+
+  - name: The Irish Times
+    url: https://www.irishtimes.com/arc/outboundfeeds/feed-irish-news/
+
+  - name: RTE
+    url: https://www.rte.ie/feeds/rss/?index=/news/
+
+  - name: South China Morning Post
+    url: https://www.scmp.com/rss/91/feed
+
+  - name: The Straits Times
+    url: https://www.straitstimes.com/news/world/rss.xml
+
+  - name: The Japan Times
+    url: https://www.japantimes.co.jp/feed/
+
+  - name: The Times of Israel
+    url: https://www.timesofisrael.com/feed/
+
+  - name: Christian Science Monitor
+    url: https://rss.csmonitor.com/feeds/all
+
+  # --- Specialist --------------------------------------------------------
+  # Optional. Adds topic breadth beyond politics and world news. Delete this
+  # block if you want a leaner corpus -- nothing else depends on it.
+
+  - name: The Verge
+    url: https://www.theverge.com/rss/index.xml
+
+  - name: Ars Technica
+    url: https://feeds.arstechnica.com/arstechnica/index
+
+  - name: TechCrunch
+    url: https://techcrunch.com/feed/
+
+  - name: Wired
+    url: https://www.wired.com/feed/rss
+
+  - name: Business Insider
+    url: https://www.businessinsider.com/rss
+
+  - name: ProPublica
+    url: https://www.propublica.org/feeds/propublica/main
+
+  - name: The Economist
+    url: https://www.economist.com/latest/rss.xml
+
+# --- Rejected, do not re-add without re-verifying ------------------------
+#   CNN     http://rss.cnn.com/rss/cnn_topstories.rss    zombie, items 3.3y old
+#   WSJ     https://feeds.a.dj.com/rss/RSSWorldNews.xml  zombie, items 1.5y old
+#   Telegraph  https://www.telegraph.co.uk/news/rss.xml  stale, newest 40d old
+#   AP      https://apnews.com/hub/ap-top-news.rss       404, no public RSS
+#   Reuters https://www.reuters.com/rssfeed/worldNews    401, no public RSS
+#   Axios   https://api.axios.com/feed/                  403, blocks non-browsers
+#   USA Today  https://rssfeeds.usatoday.com/...         did not parse
+#   CBC     https://www.cbc.ca/webfeed/rss/rss-topstories  timed out x3
+#   Washington Post  https://feeds.washingtonpost.com/rss/national  only 4 items
