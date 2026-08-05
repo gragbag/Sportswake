@@ -40,7 +40,7 @@ def sync_outlets(session) -> list[Outlet]:
     config = yaml.safe_load(FEEDS_FILE.read_text())
     for entry in config["feeds"]:
         stmt = (
-            pg_insert(Outlet.__table__)
+            pg_insert(Outlet)
             .values(id=str(__import__("uuid").uuid4()),
                     name=entry["name"], feed_url=entry["url"])
             .on_conflict_do_nothing(index_elements=["feed_url"])
@@ -54,7 +54,9 @@ def parse_published(entry) -> datetime | None:
     parsed = getattr(entry, "published_parsed", None) or getattr(entry, "updated_parsed", None)
     if not parsed:
         return None
-    return datetime(*parsed[:6], tzinfo=timezone.utc)
+    
+    year, month, day, hour, minute, second = parsed[:6]
+    return datetime(year, month, day, hour, minute, second, tzinfo=timezone.utc)
 
 
 def fetch_outlet(session, outlet: Outlet) -> None:
@@ -96,7 +98,7 @@ def fetch_outlet(session, outlet: Outlet) -> None:
                 continue
 
             stmt = (
-                pg_insert(Article.__table__)
+                pg_insert(Article)
                 .values(
                     id=str(__import__("uuid").uuid4()),
                     outlet_id=outlet.id,

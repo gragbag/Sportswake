@@ -17,8 +17,12 @@ from sqlalchemy import func, select
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from common.models import (  # noqa: E402
-    Article, FetchRun, Outlet, make_engine, make_session_factory,
+from common.models import (
+    Article,
+    FetchRun,
+    Outlet,
+    make_engine,
+    make_session_factory,
 )
 
 # serverless=True -> no client-side pooling. Use the transaction-mode pooler
