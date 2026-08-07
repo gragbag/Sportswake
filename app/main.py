@@ -75,7 +75,7 @@ def index() -> str:
 <title>Crosscut</title><style>{STYLE}</style>
 <h1>Crosscut</h1>
 <p class="sub">{total:,} articles in the corpus &middot; <a href="/status">status</a></p>
-{f'<ol>{items}</ol>' if recent else empty}"""
+{f"<ol>{items}</ol>" if recent else empty}"""
 
 
 @app.get("/status", response_class=HTMLResponse)
@@ -100,7 +100,7 @@ def status() -> str:
 
     body = "".join(
         f"<tr><td>{html.escape(o.name)}</td>"
-        f"<td class=\"{'err' if last and last.status == 'error' else ''}\">"
+        f'<td class="{"err" if last and last.status == "error" else ""}">'
         f"{html.escape(last.status) if last else 'never run'}</td>"
         f"<td>{last.started_at.strftime('%b %d, %H:%M UTC') if last else '&mdash;'}</td>"
         f"<td>{count:,}</td></tr>"

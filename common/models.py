@@ -7,12 +7,12 @@ alters schema.
 import os
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
+from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import (
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -24,7 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+from .config import EMBEDDING_DIM  # Also loads the .env variables
 
 
 class Base(DeclarativeBase):
@@ -86,6 +86,8 @@ class Article(Base):
         DateTime(timezone=True), default=utcnow
     )
 
+    embedding: Mapped[list[float] | None] = mapped_column(HALFVEC(EMBEDDING_DIM))
+
     # Dedup key. Reruns and overlapping fetch windows are safe because inserts
     # use ON CONFLICT DO NOTHING against this constraint.
     __table_args__ = (
@@ -122,9 +124,54 @@ class FetchRun(Base):
         DateTime(timezone=True), default=utcnow
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    __table_args__ = (
-        Index("ix_fetch_runs_outlet_started", "outlet_id", "started_at"),
+    __table_args__ = (Index("ix_fetch_runs_outlet_started", "outlet_id", "started_at"),)
+
+
+class Story(Base):
+    """A cluster of articles about one event.
+
+    last_activity_at is the newest coalesce(published_at, first_seen_at) among
+    members. It does double duty: it filters the candidate window, and it is
+    the timestamp the Gaussian time decay measures Δt against -- which is what
+    lets a live story keep accepting articles while a dormant one stops.
+    """
+
+    __tablename__ = "stories"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
     )
+    title: Mapped[str | None] = mapped_column(Text)
+    centroid: Mapped[list[float]] = mapped_column(HALFVEC(EMBEDDING_DIM))
+    last_activity_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+    __table_args__ = (Index("ix_stories_last_activity", "last_activity_at"),)
+
+
+class StoryMember(Base):
+    """One row per membership decision.
+
+    Append-only: rows are inserted, never updated or deleted, so clustering can
+    be replayed at a different threshold and diffed against the current state.
+    """
+
+    __tablename__ = "story_members"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
+    story_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("stories.id"))
+    article_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("articles.id"), unique=True
+    )
+    # Raw cosine, not the time-decayed score -- see the migration comment.
+    similarity: Mapped[float] = mapped_column(Float)
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (Index("ix_story_members_story", "story_id"),)
 
 
 def make_engine(url: str | None = None, serverless: bool = False):
