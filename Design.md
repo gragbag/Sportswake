@@ -31,9 +31,9 @@ Explicitly out of scope for v1. Each of these is a real feature; none is require
 
 - **Bias or political-lean scoring.** Published bias ratings are contested and methodologically disputed. Presenting one as fact means defending someone else's methodology. Divergence is shown instead, and the reader draws conclusions.
 - **Full article text display.** Headlines, timestamps, links, and original summaries only.
-- **Public comment threads.** See "Alternatives considered."
+- **Public comments, likes, and user posts.** Deferred to milestone 8, not rejected. Private notes ship first at milestone 6 and share the schema. See "Alternatives considered" for the prerequisites.
 - **Real-time updates.** No websockets, no live-updating feeds. Polling and page refresh are sufficient.
-- **Mobile app, public API, notifications, social features.** Not in v1.
+- **Mobile app, public API, notifications.** Not in v1.
 - **Non-English sources.** Clustering quality across languages is a separate problem.
 - **Paywalled content.** RSS metadata only; no bypassing access controls.
 
@@ -315,7 +315,11 @@ Every competitor treats bias as the axis of comparison. **Time and syndication a
 
 **Selecting daily topics to cluster.** Circular: topic popularity is derived from the corpus, so it cannot gate entry to the corpus. The selectable input is the outlet list.
 
-**Public comment threads.** Cut in favor of **private notes** — same schema, same UI surface, visible only to their author. Public comments on news stories generate a moderation obligation that is a full project in itself, and the engineering skill demonstrated is negligible. Revisit only with a moderation plan.
+**Public comment threads, before private notes.** Deferred, not cut. **Private notes ship first** (milestone 6) because they are the same table and the same UI surface with a visibility flag — so the social layer is a change to who can read a row, not a new subsystem.
+
+The reason for the ordering is that public comments on news stories create a moderation obligation that is a full project on its own: reporting, blocking, rate limits, spam defence, an appeals path, and a named human who decides. That work is real regardless of how good the code is, and none of it demonstrates anything about the coverage-divergence thesis. Shipping comments before milestone 4 exists would mean moderating discussion of a product that has nothing to discuss yet.
+
+**Prerequisites before milestone 8 starts:** story pages exist and are worth talking about (milestone 4), accounts and private notes exist (milestone 6), and a written moderation policy exists — including what gets removed, who decides, and how a user appeals. Likes and reactions are the cheap half and can land first: they carry no free text, so they need rate limiting and vote-manipulation defence but no content moderation.
 
 **Running the ingest worker inside the web app.** Fewer moving parts, but ties fetch reliability to web deploys and, on serverless hosts, to execution timeouts that long-running fetch cycles exceed. A separate scheduled worker sidesteps both.
 
@@ -338,20 +342,22 @@ Three independently deployable pieces, chosen so each sits on a free tier that f
 
 | Piece | Target | Why |
 |---|---|---|
-| Web app | Vercel or Cloudflare Pages | Git-push deploys, preview URLs, no server to manage |
+| Web app | Render free tier (FastAPI) | Git-push deploys, `render.yaml` blueprint, no server to manage |
 | Ingest worker | GitHub Actions scheduled workflow | Full runtime, arbitrary dependencies, no cold-start penalty, no spin-down |
-| Database | Neon Postgres + pgvector | Managed Postgres with branching; pgvector without self-hosting |
-| Raw payloads | Cloudflare R2 | Keeps feed bodies out of the 0.5 GB database tier |
+| Database | Supabase Postgres + pgvector | Managed Postgres; pgvector available without self-hosting |
+| Raw payloads | Supabase Storage (not yet built) | Keeps feed bodies out of the 0.5 GB database tier |
 
 The worker deliberately does **not** run on the web host. Serverless function timeouts are incompatible with a fetch cycle across 30 feeds, and free container tiers spin down when idle. A scheduled CI job has neither constraint and can `pip install` an embedding model.
 
-**Connection pooling.** Serverless app instances open connections per invocation and will exhaust Postgres under trivial load. The app uses Neon's *pooled* connection string; the worker and migrations use the *direct* string. Two different URLs, both in secrets, easy to get wrong once and never again.
+**Connection pooling.** Short-lived app instances open connections per request and will exhaust Postgres under trivial load. Match the pooler to the lifetime of the thing using it: the app uses Supabase's **transaction-mode pooler (port 6543)**, one query per request; the worker and migrations use the **session-mode pooler (port 5432)**, because DDL and multi-statement transactions need a connection that stays theirs. Supabase's *direct* connection string is IPv6-only and will not resolve from a GitHub Actions runner — that failure looks like a DNS error, not a configuration one.
 
-**Compute budget.** Neon's free tier meters compute in CU-hours with scale-to-zero, and each worker run wakes the database for a minimum window. Polling every few minutes can consume the monthly allowance on wake-ups alone. Cadence is hourly, and each run opens one connection and batches all writes.
+**Polling cadence.** Hourly, and the binding reason is feed truncation rather than compute. Measured across the outlet set, feed windows range from about 2 hours (The Hill, Fox, Washington Examiner) to 30 days (DW, The Economist). Any cadence slower than the shortest window silently loses articles, and GitHub's scheduled runs already drift 30–60 minutes late. Each run opens one connection and batches its writes.
 
 **Scheduled-workflow caveats.** GitHub Actions cron is best-effort and can fire late under load, and scheduled workflows are disabled after a period of repository inactivity. Neither matters for hourly news ingestion, but both must be understood before treating the schedule as a guarantee. The `/status` page exists partly to make a silently stopped schedule visible.
 
-**Language split.** The worker is Python (mature embedding and NER ecosystem); the app is TypeScript. The database schema is the contract between them, with migrations owned by one side only. The alternative — a single TypeScript codebase using a JS embedding runtime — trades ML ergonomics for operational simplicity and is a reasonable choice for a solo developer who prefers not to context-switch.
+**Single language: Python.** An earlier draft split the worker (Python) from the app (TypeScript), with the database schema as the contract. Rejected in favour of one language end to end: FastAPI for the app, Python for the worker, one dependency file, one mental model, and no context-switching for a solo developer. The ML ergonomics argument that motivated Python for the worker applies just as well to the whole codebase, and the cost — a less rich frontend ecosystem — does not bite until the story pages need real interactivity.
+
+**Worker dependency weight is an open problem.** Embeddings run in the worker, which means `sentence-transformers` and roughly 2 GB of torch installed on a fresh runner every hour to perform well under a second of actual inference. The candidate fixes are an ONNX runtime (no torch, tens of megabytes) or a prebuilt container image. This must be resolved before the cron embeds and clusters rather than only ingesting.
 
 ## Milestones
 
@@ -364,8 +370,11 @@ Ordered to front-load risk. Auth is a solved problem and teaches nothing about v
 5. **Cached summaries.** LLM synthesis with regeneration policy.
 6. **Accounts.** Auth, favorites, search history, private notes.
 7. **Recommendations.** Preference vector, personalized home feed, trending fallback.
+8. **Social layer.** Likes and reactions on stories first, then public comments — gated on the moderation prerequisites in "Alternatives considered." Private notes from milestone 6 become public by changing a visibility flag, not by adding a subsystem.
 
-Milestones 5–7 are additive. Stopping after 4 still yields a complete, defensible project.
+Milestones 5–8 are additive. Stopping after 4 still yields a complete, defensible project.
+
+Milestone 8 is the one most likely to be attempted early, and the ordering is deliberate: it is the only milestone whose cost is mostly *not* engineering. Building it before milestone 4 means moderating conversation about a product that cannot yet show a coverage timeline.
 
 ## Appendix: evaluation methodology
 
