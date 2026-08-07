@@ -1,5 +1,5 @@
 .PHONY: check lint types migrations imports fmt db-up db-migrate \
-        embed cluster report recluster ingest branch
+        embed cluster report recluster ingest branch eval
 
 VENV     := .venv/bin
 LOCAL_DB := postgresql://postgres:postgres@localhost:5432/presswake
@@ -46,9 +46,3 @@ report:
 recluster:
 	DATABASE_URL=$(LOCAL_DB) $(VENV)/python -m worker.cluster --reset
 	DATABASE_URL=$(LOCAL_DB) $(VENV)/python scripts/cluster_report.py
-
-# Github
-branch:
-	git switch main
-	git pull --ff-only --prune
-	git switch -c $(name)
