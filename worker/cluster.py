@@ -28,8 +28,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import func, text
 
 from common.config import (
+    ACCEPT_COSINE,
+    CANDIDATE_MIN_COSINE,
     CANDIDATE_WINDOW_HOURS,
-    SIMILARITY_THRESHOLD,
     TIME_DECAY_SIGMA_HOURS,
 )
 from common.models import (
@@ -68,22 +69,65 @@ def time_factor(gap_hours: float) -> float:
 def candidate_stories(session, article: Article, when: datetime):
     """Stories that could plausibly absorb this article.
 
-    The cosine filter is EXACT, not an approximation: time_factor is always
-    <= 1, so a story whose raw cosine is already below the threshold can never
-    clear it after decay. That usually cuts thousands of rows to a handful.
+    Two routes in, unioned, scored as max(centroid cosine, best member cosine):
+
+      - the story's CENTROID is close        (average linkage)
+      - any single MEMBER is close           (single linkage)
+
+    Centroid-only rejects an article that matches one member strongly but the
+    cluster mean weakly -- the drift merge_pass() exists to clean up afterward.
+    Taking the max catches it at assignment time instead.
+
+    Two vector queries rather than one grouped join: joining every member of
+    every candidate story runs once per article, and pgvector answers each of
+    these directly.
+
+    The floor is CANDIDATE_MIN_COSINE, deliberately looser than ACCEPT_COSINE,
+    so nothing at or above the accept bar can be excluded.
+
+    Returns (story_id, last_activity_at, cosine).
     """
-    dist = Story.centroid.cosine_distance(article.embedding)
-    return (
-        session.query(Story.id, Story.last_activity_at, dist.label("dist"))
+    floor = 1.0 - CANDIDATE_MIN_COSINE
+    window_start = when - timedelta(hours=CANDIDATE_WINDOW_HOURS)
+    retire_cutoff = utcnow() - timedelta(days=RETIRE_AFTER_DAYS)
+    best: dict[str, tuple[datetime, float]] = {}
+
+    cdist = Story.centroid.cosine_distance(article.embedding)
+    for sid, last_activity, dist in (
+        session.query(Story.id, Story.last_activity_at, cdist.label("d"))
         .filter(
-            Story.last_activity_at >= when - timedelta(hours=CANDIDATE_WINDOW_HOURS),
-            Story.last_activity_at >= utcnow() - timedelta(days=RETIRE_AFTER_DAYS),
-            dist <= 1.0 - SIMILARITY_THRESHOLD,
+            Story.last_activity_at >= window_start,
+            Story.last_activity_at >= retire_cutoff,
+            cdist <= floor,
         )
-        .order_by(dist)
+        .order_by(cdist)
         .limit(CANDIDATE_LIMIT)
         .all()
-    )
+    ):
+        best[sid] = (last_activity, 1.0 - float(dist))
+
+    mdist = Article.embedding.cosine_distance(article.embedding)
+    for sid, last_activity, dist in (
+        session.query(Story.id, Story.last_activity_at, mdist.label("d"))
+        .select_from(Article)
+        .join(StoryMember, StoryMember.article_id == Article.id)
+        .join(Story, Story.id == StoryMember.story_id)
+        .filter(
+            Article.id != article.id,
+            Story.last_activity_at >= window_start,
+            Story.last_activity_at >= retire_cutoff,
+            mdist <= floor,
+        )
+        .order_by(mdist)
+        .limit(CANDIDATE_LIMIT * 4)
+        .all()
+    ):
+        cosine = 1.0 - float(dist)
+        previous = best.get(sid)
+        if previous is None or cosine > previous[1]:
+            best[sid] = (last_activity, cosine)
+
+    return [(sid, la, cos) for sid, (la, cos) in best.items()]
 
 
 def recompute_centroid(session, story: Story) -> None:
@@ -108,18 +152,28 @@ def recompute_centroid(session, story: Story) -> None:
 
 
 def assign(session, article: Article) -> Story:
-    """Join the best-scoring story, or seed a new one."""
+    """Join the best-scoring story, or seed a new one.
+
+    ACCEPT_COSINE gates on RAW cosine. The time factor only ranks which of the
+    already-acceptable candidates wins -- it can no longer veto one.
+
+    Filter before ranking, not after. A weak near-in-time candidate can
+    out-score a stronger distant one (cosine 0.64 at 0h scores 0.640; cosine
+    0.70 at 40h scores 0.599), so testing only the winner's cosine would reject
+    an article that had a perfectly good story available.
+    """
     when = article_time(article)
 
-    best_story_id, best_cosine, best_score = None, 0.0, 0.0
-    for story_id, last_activity, dist in candidate_stories(session, article, when):
-        cosine = 1.0 - float(dist)
+    best_story_id, best_cosine, best_score = None, 0.0, -1.0
+    for story_id, last_activity, cosine in candidate_stories(session, article, when):
+        if cosine < ACCEPT_COSINE:
+            continue
         gap_hours = abs((when - last_activity).total_seconds()) / 3600.0
         score = cosine * time_factor(gap_hours)
         if score > best_score:
             best_story_id, best_cosine, best_score = story_id, cosine, score
 
-    if best_story_id is not None and best_score >= SIMILARITY_THRESHOLD:
+    if best_story_id is not None:
         story = session.get(Story, best_story_id)
         session.add(
             StoryMember(
@@ -265,8 +319,8 @@ def main() -> int:
         )
         print(
             f"{pending} articles to cluster  "
-            f"(threshold {SIMILARITY_THRESHOLD}, window {CANDIDATE_WINDOW_HOURS}h, "
-            f"sigma {TIME_DECAY_SIGMA_HOURS}h)"
+            f"(accept {ACCEPT_COSINE}, floor {CANDIDATE_MIN_COSINE}, "
+            f"window {CANDIDATE_WINDOW_HOURS}h, sigma {TIME_DECAY_SIGMA_HOURS}h)"
         )
         if pending:
             print(f"done, {cluster_pending(session)} assigned")
