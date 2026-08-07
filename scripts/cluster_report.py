@@ -13,8 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import text
 
 from common.config import (
+    ACCEPT_COSINE,
     CANDIDATE_WINDOW_HOURS,
-    SIMILARITY_THRESHOLD,
     TIME_DECAY_SIGMA_HOURS,
 )
 from common.models import make_engine
@@ -28,7 +28,7 @@ PROBES = [
 def main() -> int:
     with make_engine().connect() as c:
         print(
-            f"threshold {SIMILARITY_THRESHOLD}  window {CANDIDATE_WINDOW_HOURS}h  "
+            f"accept {ACCEPT_COSINE}  window {CANDIDATE_WINDOW_HOURS}h  "
             f"sigma {TIME_DECAY_SIGMA_HOURS}h"
         )
         a = c.execute(text("select count(*) from articles")).scalar()

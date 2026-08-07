@@ -6,7 +6,7 @@ Two numbers that measure different things:
 
   THRESHOLD SWEEP -- how well raw cosine alone separates the labels. This is
   the ceiling for any threshold-based decision and tells you where
-  SIMILARITY_THRESHOLD should sit.
+  ACCEPT_COSINE should sit.
 
   END-TO-END -- whether the clusterer as it actually ran (centroids, time
   decay, merge pass) put each labelled pair in the same story. This is the
@@ -30,8 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import bindparam, text
 
 from common.config import (
+    ACCEPT_COSINE,
     MERGE_THRESHOLD,
-    SIMILARITY_THRESHOLD,
     TIME_DECAY_SIGMA_HOURS,
 )
 from common.models import make_engine
@@ -119,9 +119,7 @@ def main() -> int:
             fp = sum(1 for p in pairs if score(p) >= threshold and not p["same"])
             fn = sum(1 for p in pairs if score(p) < threshold and p["same"])
             precision, recall, f1 = prf(tp, fp, fn)
-            mark = (
-                " <-- current" if abs(threshold - SIMILARITY_THRESHOLD) < 1e-9 else ""
-            )
+            mark = " <-- current" if abs(threshold - ACCEPT_COSINE) < 1e-9 else ""
             print(
                 f"  {threshold:>7.3f} {precision:>6.3f} {recall:>7.3f} "
                 f"{f1:>6.3f} {tp:>4} {fp:>3} {fn:>3}{mark}"
@@ -132,7 +130,7 @@ def main() -> int:
 
     # ---- end to end ------------------------------------------------------
     print(
-        f"END-TO-END (as clustered: threshold {SIMILARITY_THRESHOLD}, "
+        f"END-TO-END (as clustered: accept {ACCEPT_COSINE}, "
         f"merge {MERGE_THRESHOLD}, sigma {TIME_DECAY_SIGMA_HOURS}h)"
     )
     together = [

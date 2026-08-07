@@ -46,3 +46,11 @@ report:
 recluster:
 	DATABASE_URL=$(LOCAL_DB) $(VENV)/python -m worker.cluster --reset
 	DATABASE_URL=$(LOCAL_DB) $(VENV)/python scripts/cluster_report.py
+
+branch:
+	git switch main
+	git pull --ff-only --prune
+	git switch -c $(name)
+
+eval:
+	DATABASE_URL=$(LOCAL_DB) $(VENV)/python scripts/eval_clustering.py
