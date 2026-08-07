@@ -1,4 +1,5 @@
-ruff
-mypy
-types-requests
-types-PyYAML
+pre-commit==4.4.0
+ruff==0.16.1
+mypy==2.3.0
+types-requests==2.32.4.20250913
+types-PyYAML==6.0.12.20250915

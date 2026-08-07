@@ -12,9 +12,11 @@ re-running at a new threshold would produce differences you cannot attribute.
 from __future__ import annotations
 
 import math
+import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 import numpy as np
 
@@ -32,7 +34,6 @@ from common.config import (
 )
 from common.models import (
     Article,
-    Story,
     StoryMember,
     make_engine,
     make_session_factory,
@@ -243,8 +244,19 @@ def cluster_pending(session, limit: int | None = None) -> int:
 
 
 def main() -> int:
+    reset = "--reset" in sys.argv
     Session = make_session_factory(make_engine())
     with Session() as session:
+        if reset:
+            host = urlparse(os.environ["DATABASE_URL"]).hostname or ""
+            if host not in ("localhost", "127.0.0.1"):
+                print(f"refusing to reset {host!r} -- localhost only")
+                return 1
+            session.execute(text("DELETE FROM story_members"))
+            session.execute(text("DELETE FROM stories"))
+            session.commit()
+            print("cleared stories and story_members")
+
         pending = (
             session.query(Article)
             .outerjoin(StoryMember, StoryMember.article_id == Article.id)

@@ -3,7 +3,7 @@ name: ci
 on:
   push:
   pull_request:
-    
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -26,10 +26,10 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    
+
     env:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/presswake_test
-        
+
     steps:
       - uses: actions/checkout@v4
 
