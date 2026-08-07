@@ -13,6 +13,7 @@ import hashlib
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urldefrag
 
 import feedparser
 import requests
@@ -31,7 +32,9 @@ from common.models import (
 )
 
 FEEDS_FILE = Path(__file__).parent / "feeds.yaml"
-USER_AGENT = "Presswake/0.1 (+https://github.com/gragbag/Presswake; firedragon1726@gmail.com)"
+USER_AGENT = (
+    "Presswake/0.1 (+https://github.com/gragbag/Presswake; firedragon1726@gmail.com)"
+)
 TIMEOUT = 20
 
 
@@ -41,8 +44,11 @@ def sync_outlets(session) -> list[Outlet]:
     for entry in config["feeds"]:
         stmt = (
             pg_insert(Outlet)
-            .values(id=str(__import__("uuid").uuid4()),
-                    name=entry["name"], feed_url=entry["url"])
+            .values(
+                id=str(__import__("uuid").uuid4()),
+                name=entry["name"],
+                feed_url=entry["url"],
+            )
             .on_conflict_do_nothing(index_elements=["feed_url"])
         )
         session.execute(stmt)
@@ -51,10 +57,12 @@ def sync_outlets(session) -> list[Outlet]:
 
 
 def parse_published(entry) -> datetime | None:
-    parsed = getattr(entry, "published_parsed", None) or getattr(entry, "updated_parsed", None)
+    parsed = getattr(entry, "published_parsed", None) or getattr(
+        entry, "updated_parsed", None
+    )
     if not parsed:
         return None
-    
+
     year, month, day, hour, minute, second = parsed[:6]
     return datetime(year, month, day, hour, minute, second, tzinfo=timezone.utc)
 
@@ -81,8 +89,6 @@ def fetch_outlet(session, outlet: Outlet) -> None:
             print(f"  {outlet.name}: unchanged")
             return
 
-        
-
         response.raise_for_status()
         feed = feedparser.parse(response.content)
 
@@ -102,7 +108,7 @@ def fetch_outlet(session, outlet: Outlet) -> None:
                 .values(
                     id=str(__import__("uuid").uuid4()),
                     outlet_id=outlet.id,
-                    guid=guid,
+                    guid=urldefrag(guid).url,
                     url=link,
                     headline=title.strip(),
                     lede=(getattr(entry, "summary", "") or "")[:2000] or None,
