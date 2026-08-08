@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* Tailwind v4 keeps design tokens in CSS rather than a JS config file.
+   Anything declared here becomes a utility -- --color-ink-500 gives you
+   text-ink-500, bg-ink-500, border-ink-500, and so on. */
+@theme {
+  --color-ink-50: #f7f7f8;
+  --color-ink-200: #e5e4e7;
+  --color-ink-500: #6b6375;
+  --color-ink-900: #08060d;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+html {
+  color-scheme: light dark;
+}

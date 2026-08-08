@@ -16,7 +16,10 @@ concurrency:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 30, not 15: a full summarize batch alone is ~9 min (25 stories paced
+    # 20s apart for Groq's TPM ceiling), plus a minute or two of torch
+    # install on a cold pip cache.
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +29,10 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - run: pip install -r requirements.txt
+      # CPU torch first, from PyTorch's own index -- installing
+      # sentence-transformers bare would pull the ~2 GB CUDA torch build.
+      - run: pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r requirements.txt -r requirements-worker.txt
 
       - name: Run migrations
         env:
@@ -39,3 +45,25 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
         run: python -m worker.ingest
+
+      # Pipeline order matters: cluster only sees embedded articles, and
+      # summarize only sees clustered stories. Each step is incremental and
+      # idempotent -- a failed run is picked up by the next hour's run.
+      - name: Embed new articles
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: python -m worker.embed
+
+      - name: Cluster new articles
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: python -m worker.cluster
+
+      - name: Summarize stories
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          # Missing secret -> empty key -> the worker prints a skip message
+          # and exits 0, so this step is safe to merge before the secret
+          # exists.
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python -m worker.summarize

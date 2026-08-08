@@ -1,0 +1,10 @@
+# Heavy ML deps, needed only by the ingest worker (embed step). Deliberately
+# not in requirements.txt: Render's app build and ci.yml's checks stay light
+# (worker.embed lazy-imports sentence_transformers, so importing the module
+# does not need the package).
+#
+# Install CPU-only torch FIRST, in a separate pip command:
+#   pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+# Otherwise this line pulls the default CUDA build of torch (~2 GB) as a
+# dependency, which the GitHub runner neither has a GPU for nor fits in cache.
+sentence-transformers==5.6.1
