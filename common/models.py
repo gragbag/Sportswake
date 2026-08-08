@@ -21,7 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from .config import EMBEDDING_DIM  # Also loads the .env variables
@@ -147,6 +147,21 @@ class Story(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
     )
+
+    # Generated summary (milestone 5). All nullable: unsummarized is the
+    # normal state, not an error, and `title` above keeps the seed-article
+    # headline as provenance -- the summary never overwrites it.
+    summary_title: Mapped[str | None] = mapped_column(Text)
+    # One line on why it matters / what happens next. Not a restatement.
+    summary_subhead: Mapped[str | None] = mapped_column(Text)
+    summary_bullets: Mapped[list[str] | None] = mapped_column(JSONB)
+    # Names validated to appear verbatim in the input text before storing.
+    summary_people: Mapped[list[str] | None] = mapped_column(JSONB)
+    summary_model: Mapped[str | None] = mapped_column(Text)
+    summarized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Distinct outlets at summary time. The regen rule compares the current
+    # count against this * SUMMARY_REGEN_GROWTH.
+    summarized_outlet_count: Mapped[int | None] = mapped_column(Integer)
 
     __table_args__ = (Index("ix_stories_last_activity", "last_activity_at"),)
 

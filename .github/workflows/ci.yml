@@ -43,8 +43,9 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      # Keep this list in sync with the Makefile's `imports` target.
       - name: Imports resolve
-        run: python -c "import common.models, worker.ingest, app.main"
+        run: python -c "import common.models, worker.ingest, worker.summarize, app.main"
 
       - name: Type check
         run: mypy common worker app
