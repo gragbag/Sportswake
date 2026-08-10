@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -52,3 +53,33 @@ SUMMARY_MIN_OUTLETS: int = int(os.environ.get("SUMMARY_MIN_OUTLETS", "5"))
 # Seconds between LLM calls. 8K TPM at ~2K tokens/story caps at ~4
 # stories/minute; 20s stays under it without thinking about it.
 SUMMARY_PACE_SECONDS: int = int(os.environ.get("SUMMARY_PACE_SECONDS", "20"))
+
+
+# ---- auth (milestone 6) -------------------------------------------------
+def _project_ref() -> str | None:
+    """Pull the Supabase project ref out of DATABASE_URL.
+
+    Pooler connection strings use `postgres.<project-ref>` as the username,
+    so the ref is already in the one secret we always have. Returns None for
+    the local Docker URL (plain `postgres`, no dot), which is what makes
+    SUPABASE_URL None and turns auth off rather than crashing.
+    """
+    url = os.environ.get("DATABASE_URL", "")
+    user = urlsplit(url).username or ""
+    ref = user.split(".", 1)[1] if "." in user else ""
+    return ref or None
+
+
+_REF = _project_ref()
+# Explicit env var wins; derivation is the convenience path.
+SUPABASE_URL: str | None = os.environ.get("SUPABASE_URL") or (
+    f"https://{_REF}.supabase.co" if _REF else None
+)
+# Public keys only -- Supabase signs with ES256 and publishes the verifying
+# half here, so the API holds no auth secret at all.
+SUPABASE_JWKS_URL: str | None = (
+    f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json" if SUPABASE_URL else None
+)
+# Supabase stamps every logged-in access token with these two claims.
+SUPABASE_JWT_AUDIENCE: str = "authenticated"
+SUPABASE_JWT_ISSUER: str | None = f"{SUPABASE_URL}/auth/v1" if SUPABASE_URL else None

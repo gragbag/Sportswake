@@ -10,3 +10,6 @@ python-dotenv==1.0.1
 pgvector==0.5.0
 numpy==2.5.1
 openai==2.53.0
+# Verifies Supabase-issued JWTs. The [crypto] extra is required, not optional:
+# without it PyJWT only does HMAC, and every ES256 token fails to verify.
+pyjwt[crypto]==2.10.1
