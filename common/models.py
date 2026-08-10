@@ -189,6 +189,35 @@ class StoryMember(Base):
     __table_args__ = (Index("ix_story_members_story", "story_id"),)
 
 
+class Favorite(Base):
+    """A story a user saved.
+
+    user_id holds the Supabase auth.users id (the JWT's `sub`) but has NO
+    foreign key to it, deliberately. auth.users lives in Supabase's own
+    schema and does not exist in the local Docker database, so a real FK
+    would make `make db-migrate LOCAL=1` fail and split the schema in two.
+    The cost is orphan rows if an account is deleted, which is cheap to
+    sweep and cheaper than two divergent schemas.
+    """
+
+    __tablename__ = "favorites"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False))
+    story_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("stories.id"))
+    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    # Favoriting twice is the same as favoriting once, so the constraint lets
+    # the insert be ON CONFLICT DO NOTHING -- same idempotency rule the
+    # article inserts follow.
+    __table_args__ = (
+        UniqueConstraint("user_id", "story_id", name="uq_favorites_user_story"),
+        Index("ix_favorites_user_saved", "user_id", "saved_at"),
+    )
+
+
 def make_engine(url: str | None = None, serverless: bool = False):
     """Build an engine.
 

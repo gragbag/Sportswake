@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { FavoriteButton } from "./FavoriteButton";
 import type { StoryArticle, StoryDetail } from "../types";
 
 /** "+0h", "+3h", "+2d" -- time since the first outlet published. */
@@ -101,9 +102,14 @@ export function StoryPage() {
             &middot; {story.span_hours}h span &middot; {groups[0]?.outlet} first
           </p>
 
-          <h1 className="mt-2 text-2xl font-semibold leading-tight text-ink-900 dark:text-white">
-            {headline}
-          </h1>
+          <div className="mt-2 flex items-start gap-3">
+            <h1 className="text-2xl font-semibold leading-tight text-ink-900 dark:text-white">
+              {headline}
+            </h1>
+            <div className="pt-1.5">
+              <FavoriteButton storyId={story.id} />
+            </div>
+          </div>
 
           {story.summary_subhead && (
             <p className="mt-2 text-[15px] leading-snug text-ink-500 dark:text-white/60">

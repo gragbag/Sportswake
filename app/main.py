@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import bindparam, func, select, text
@@ -148,53 +148,38 @@ def api_stats() -> dict:
 
 SPARK_BUCKETS = 10
 
+# The select list every card needs. Shared so the feed and the favorites list
+# cannot drift into returning different shapes for the same component.
+_CARD_COLUMNS = """
+    s.id, s.title, s.summary_title, s.summary_subhead,
+    count(*) as article_count,
+    count(distinct a.outlet_id) as outlet_count,
+    min(coalesce(a.published_at, a.first_seen_at)) as first_at,
+    max(coalesce(a.published_at, a.first_seen_at)) as last_at
+"""
 
-@app.get("/api/stories")
-def api_stories(limit: int = 24) -> list[dict]:
-    """Stories worth rendering, most-covered first.
 
-    Singletons are excluded here, not from the corpus -- they are what supports
-    "only one outlet covered this", so they stay in the database and stay out
-    of the feed.
+def _attach_members(session, rows) -> list[dict]:
+    """Turn aggregate rows into card payloads.
 
-    The sparkline is bucketed server-side. Sending every member timestamp would
-    be ~2,400 ISO strings for one page of cards to draw ten bars from.
+    One extra query for every story at once rather than per row -- N+1 here
+    would be 24 round trips to Supabase for one page load.
     """
-    with Session() as session:
-        rows = session.execute(
-            text("""
-                select s.id, s.title, s.summary_title, s.summary_subhead,
-                       count(*) as article_count,
-                       count(distinct a.outlet_id) as outlet_count,
-                       min(coalesce(a.published_at, a.first_seen_at)) as first_at,
-                       max(coalesce(a.published_at, a.first_seen_at)) as last_at
-                from stories s
-                join story_members sm on sm.story_id = s.id
-                join articles a on a.id = sm.article_id
-                group by s.id, s.title, s.summary_title, s.summary_subhead
-                having count(distinct a.outlet_id) >= 2
-                order by count(distinct a.outlet_id) desc, max(
-                    coalesce(a.published_at, a.first_seen_at)) desc
-                limit :limit
-            """),
-            {"limit": limit},
-        ).all()
+    if not rows:
+        return []
 
-        if not rows:
-            return []
-
-        members = session.execute(
-            text("""
-                select sm.story_id, o.name,
-                       coalesce(a.published_at, a.first_seen_at) as t
-                from story_members sm
-                join articles a on a.id = sm.article_id
-                join outlets o on o.id = a.outlet_id
-                where sm.story_id in :ids
-                order by t
-            """).bindparams(bindparam("ids", expanding=True)),
-            {"ids": [r.id for r in rows]},
-        ).all()
+    members = session.execute(
+        text("""
+            select sm.story_id, o.name,
+                   coalesce(a.published_at, a.first_seen_at) as pub_at
+            from story_members sm
+            join articles a on a.id = sm.article_id
+            join outlets o on o.id = a.outlet_id
+            where sm.story_id in :ids
+            order by pub_at
+        """).bindparams(bindparam("ids", expanding=True)),
+        {"ids": [r.id for r in rows]},
+    ).all()
 
     by_story: dict[str, list] = {}
     for story_id, outlet, when in members:
@@ -220,9 +205,6 @@ def api_stories(limit: int = 24) -> list[dict]:
             {
                 "id": str(row.id),
                 "title": row.title,
-                # Nullable by design: the card falls back to the seed title and
-                # shows no AI label when these are absent. Bullets/people stay
-                # out of this payload -- they belong to the story page.
                 "summary_title": row.summary_title,
                 "summary_subhead": row.summary_subhead,
                 "article_count": row.article_count,
@@ -235,6 +217,32 @@ def api_stories(limit: int = 24) -> list[dict]:
             }
         )
     return out
+
+
+@app.get("/api/stories")
+def api_stories(limit: int = 24) -> list[dict]:
+    """Stories worth rendering, most-covered first.
+
+    Singletons are excluded here, not from the corpus -- they are what supports
+    "only one outlet covered this", so they stay in the database and stay out
+    of the feed.
+    """
+    with Session() as session:
+        rows = session.execute(
+            text(f"""
+                select {_CARD_COLUMNS}
+                from stories s
+                join story_members sm on sm.story_id = s.id
+                join articles a on a.id = sm.article_id
+                group by s.id
+                having count(distinct a.outlet_id) >= 2
+                order by count(distinct a.outlet_id) desc, max(
+                    coalesce(a.published_at, a.first_seen_at)) desc
+                limit :limit
+            """),
+            {"limit": limit},
+        ).all()
+        return _attach_members(session, rows)
 
 
 @app.get("/api/me")
@@ -252,6 +260,102 @@ def api_me(user: Annotated[dict, Depends(current_user)]) -> dict:
     }
 
 
+def _valid_uuid(value: str) -> str:
+    """404 rather than 500 on a malformed id.
+
+    story_id columns are uuid, so a junk string reaches Postgres as a failed
+    cast and surfaces as a server error unless it is rejected here.
+    """
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="story not found") from None
+    return value
+
+
+@app.get("/api/favorites")
+def api_favorites(user: Annotated[dict, Depends(current_user)]) -> list[dict]:
+    """The signed-in user's saved stories, most recently saved first.
+
+    Same card shape as /api/stories so the frontend renders both with one
+    component.
+    """
+    with Session() as session:
+        rows = session.execute(
+            text(f"""
+                select {_CARD_COLUMNS}, f.saved_at
+                from favorites f
+                join stories s on s.id = f.story_id
+                join story_members sm on sm.story_id = s.id
+                join articles a on a.id = sm.article_id
+                where f.user_id = :uid
+                group by s.id, f.saved_at
+                order by f.saved_at desc
+            """),
+            {"uid": user["sub"]},
+        ).all()
+        return _attach_members(session, rows)
+
+
+@app.get("/api/favorites/ids")
+def api_favorite_ids(user: Annotated[dict, Depends(current_user)]) -> list[str]:
+    """Just the ids, so the feed can render filled/empty stars in one request
+    instead of asking per card."""
+    with Session() as session:
+        rows = session.execute(
+            text("select story_id from favorites where user_id = :uid"),
+            {"uid": user["sub"]},
+        ).all()
+    return [str(r.story_id) for r in rows]
+
+
+@app.put("/api/favorites/{story_id}")
+def api_favorite_add(
+    story_id: str, user: Annotated[dict, Depends(current_user)]
+) -> Response:
+    """Save a story. PUT, not POST: favoriting twice is the same as once, and
+    the unique constraint makes the insert genuinely idempotent."""
+    _valid_uuid(story_id)
+    with Session() as session:
+        exists = session.execute(
+            text("select 1 from stories where id = :sid"), {"sid": story_id}
+        ).first()
+        if exists is None:
+            # Without this the FK raises IntegrityError and FastAPI returns a
+            # 500 for what is really a bad request.
+            raise HTTPException(status_code=404, detail="story not found")
+
+        session.execute(
+            text("""
+                insert into favorites (id, user_id, story_id)
+                values (gen_random_uuid(), :uid, :sid)
+                on conflict (user_id, story_id) do nothing
+            """),
+            {"uid": user["sub"], "sid": story_id},
+        )
+        session.commit()
+    # 204 declared here rather than on the decorator: FastAPI asserts that a
+    # decorator status_code of 204 has no response field, and a `-> None`
+    # annotation still creates one.
+    return Response(status_code=204)
+
+
+@app.delete("/api/favorites/{story_id}")
+def api_favorite_remove(
+    story_id: str, user: Annotated[dict, Depends(current_user)]
+) -> Response:
+    """Unsave. Deleting something already gone is a success, not a 404 --
+    the end state the caller asked for is the end state they get."""
+    _valid_uuid(story_id)
+    with Session() as session:
+        session.execute(
+            text("delete from favorites where user_id = :uid and story_id = :sid"),
+            {"uid": user["sub"], "sid": story_id},
+        )
+        session.commit()
+    return Response(status_code=204)
+
+
 @app.get("/api/stories/{story_id}")
 def api_story(story_id: str) -> dict:
     """One story, with every member article.
@@ -260,12 +364,7 @@ def api_story(story_id: str) -> dict:
     row per outlet: the sources section is a completeness claim, and the
     headline comparison is the product -- both want everything.
     """
-    # s.id is a uuid column, so a malformed id would reach Postgres and come
-    # back a 500. Reject it here as the 404 it actually is.
-    try:
-        uuid.UUID(story_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="story not found") from None
+    _valid_uuid(story_id)
 
     with Session() as session:
         # group by s.id alone is legal: it is the primary key, so Postgres
@@ -344,7 +443,12 @@ if _DIST.is_dir():
     # real files, so /app/login is a 404 on hard refresh without this.
     # Listed explicitly rather than as a catch-all so a genuinely wrong URL
     # still 404s instead of silently rendering the app.
-    _SPA_ROUTES = ["/app/story/{story_id}", "/app/login", "/app/signup"]
+    _SPA_ROUTES = [
+        "/app/story/{story_id}",
+        "/app/login",
+        "/app/signup",
+        "/app/favorites",
+    ]
 
     def _serve_index() -> str:
         return (_DIST / "index.html").read_text(encoding="utf-8")

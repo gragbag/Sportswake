@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.tsx";
 import { AuthProvider } from "./lib/AuthProvider";
+import { FavoritesProvider } from "./lib/FavoritesProvider";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
@@ -14,7 +15,11 @@ createRoot(document.getElementById("root")!).render(
         and outside <App /> so the header and every route share one session. */}
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <AuthProvider>
-        <App />
+        {/* Inside AuthProvider because it reads the session to decide what to
+            fetch and when to clear. */}
+        <FavoritesProvider>
+          <App />
+        </FavoritesProvider>
       </AuthProvider>
     </BrowserRouter>
   </StrictMode>,
