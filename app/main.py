@@ -11,14 +11,16 @@ import html
 import sys
 import uuid
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import bindparam, func, select, text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.auth import current_user
 from common.models import (
     Article,
     FetchRun,
@@ -235,6 +237,21 @@ def api_stories(limit: int = 24) -> list[dict]:
     return out
 
 
+@app.get("/api/me")
+def api_me(user: Annotated[dict, Depends(current_user)]) -> dict:
+    """Who the caller is, per their token. 401 when signed out.
+
+    Exists to prove the auth round-trip end to end before anything depends
+    on it. `sub` is the Supabase user id that favorites and notes will key
+    against in the rest of milestone 6.
+    """
+    return {
+        "id": user["sub"],
+        "email": user.get("email"),
+        "role": user.get("role"),
+    }
+
+
 @app.get("/api/stories/{story_id}")
 def api_story(story_id: str) -> dict:
     """One story, with every member article.
@@ -323,18 +340,18 @@ def api_story(story_id: str) -> dict:
 # beneath it, so anything declared after it would be unreachable.
 _DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 if _DIST.is_dir():
+    # Every client-side route needs an entry here. StaticFiles only resolves
+    # real files, so /app/login is a 404 on hard refresh without this.
+    # Listed explicitly rather than as a catch-all so a genuinely wrong URL
+    # still 404s instead of silently rendering the app.
+    _SPA_ROUTES = ["/app/story/{story_id}", "/app/login", "/app/signup"]
 
-    @app.get("/app/story/{story_id}", response_class=HTMLResponse)
-    def spa_fallback(story_id: str) -> str:
-        """Serve index.html for client-side routes.
-
-        StaticFiles resolves real files; /app/story/<uuid> is not one, so a
-        hard refresh or a pasted link would 404 without this. React reads
-        the path from the URL bar and renders the right view.
-
-        Registered BEFORE the mount on purpose -- routes match in
-        declaration order, and the mount would otherwise swallow this path.
-        """
+    def _serve_index() -> str:
         return (_DIST / "index.html").read_text(encoding="utf-8")
+
+    for _route in _SPA_ROUTES:
+        # Registered BEFORE the mount on purpose -- routes match in
+        # declaration order, and the mount would otherwise swallow these.
+        app.get(_route, response_class=HTMLResponse)(_serve_index)
 
     app.mount("/app", StaticFiles(directory=_DIST, html=True), name="frontend")

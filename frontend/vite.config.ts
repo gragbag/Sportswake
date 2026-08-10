@@ -14,6 +14,12 @@ export default defineConfig({
   // basename, so the two can never disagree.
   base: "/app/",
 
+  // Read the repo-root .env instead of frontend/.env, so there is one env
+  // file for the whole project. Only VITE_-prefixed variables are exposed to
+  // browser code -- DATABASE_URL and GROQ_API_KEY are loaded but never
+  // bundled. The corollary is a rule: never prefix a secret with VITE_.
+  envDir: "..",
+
   server: {
     // Dev only. The FastAPI app runs separately on 8000; proxying /api keeps
     // the browser on one origin so there is no CORS to configure.
