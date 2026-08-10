@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import html
 import sys
+import uuid
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import bindparam, func, select, text
@@ -234,10 +235,106 @@ def api_stories(limit: int = 24) -> list[dict]:
     return out
 
 
+@app.get("/api/stories/{story_id}")
+def api_story(story_id: str) -> dict:
+    """One story, with every member article.
+
+    Unlike /api/stories this returns the full member list rather than one
+    row per outlet: the sources section is a completeness claim, and the
+    headline comparison is the product -- both want everything.
+    """
+    # s.id is a uuid column, so a malformed id would reach Postgres and come
+    # back a 500. Reject it here as the 404 it actually is.
+    try:
+        uuid.UUID(story_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="story not found") from None
+
+    with Session() as session:
+        # group by s.id alone is legal: it is the primary key, so Postgres
+        # treats the other stories columns as functionally dependent.
+        row = session.execute(
+            text("""
+                select s.id, s.title, s.summary_title, s.summary_subhead,
+                       s.summary_bullets, s.summary_people, s.summary_model,
+                       s.summarized_at,
+                       count(*) as article_count,
+                       count(distinct a.outlet_id) as outlet_count,
+                       min(coalesce(a.published_at, a.first_seen_at)) as first_at,
+                       max(coalesce(a.published_at, a.first_seen_at)) as last_at
+                from stories s
+                join story_members sm on sm.story_id = s.id
+                join articles a on a.id = sm.article_id
+                where s.id = :sid
+                group by s.id
+            """),
+            {"sid": story_id},
+        ).one_or_none()
+
+        if row is None:
+            raise HTTPException(status_code=404, detail="story not found")
+
+        # NOT "as t": SQLAlchemy Row owns a legacy .t attribute that would
+        # shadow a column of that name.
+        articles = session.execute(
+            text("""
+                select o.name as outlet, a.headline, a.url,
+                       coalesce(a.published_at, a.first_seen_at) as pub_at
+                from story_members sm
+                join articles a on a.id = sm.article_id
+                join outlets o on o.id = a.outlet_id
+                where sm.story_id = :sid
+                order by pub_at
+            """),
+            {"sid": story_id},
+        ).all()
+
+    span = (row.last_at - row.first_at).total_seconds()
+    return {
+        "id": str(row.id),
+        "title": row.title,
+        # JSONB decodes to real lists; null stays null for unsummarized.
+        "summary_title": row.summary_title,
+        "summary_subhead": row.summary_subhead,
+        "summary_bullets": row.summary_bullets,
+        "summary_people": row.summary_people,
+        "summary_model": row.summary_model,
+        "summarized_at": row.summarized_at.isoformat() if row.summarized_at else None,
+        "article_count": row.article_count,
+        "outlet_count": row.outlet_count,
+        "first_at": row.first_at.isoformat(),
+        "last_at": row.last_at.isoformat(),
+        "span_hours": round(span / 3600, 1),
+        "articles": [
+            {
+                "outlet": a.outlet,
+                "headline": a.headline,
+                "url": a.url,
+                "published_at": a.pub_at.isoformat(),
+            }
+            for a in articles
+        ],
+    }
+
+
 # Serve the built React app, if it has been built. Mounted at /app rather than
 # "/" so the existing server-rendered pages keep working -- move it to "/" once
 # React replaces them. Must be registered last: a mount matches every path
 # beneath it, so anything declared after it would be unreachable.
 _DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 if _DIST.is_dir():
+
+    @app.get("/app/story/{story_id}", response_class=HTMLResponse)
+    def spa_fallback(story_id: str) -> str:
+        """Serve index.html for client-side routes.
+
+        StaticFiles resolves real files; /app/story/<uuid> is not one, so a
+        hard refresh or a pasted link would 404 without this. React reads
+        the path from the URL bar and renders the right view.
+
+        Registered BEFORE the mount on purpose -- routes match in
+        declaration order, and the mount would otherwise swallow this path.
+        """
+        return (_DIST / "index.html").read_text(encoding="utf-8")
+
     app.mount("/app", StaticFiles(directory=_DIST, html=True), name="frontend")

@@ -1,12 +1,26 @@
 # A target listed here runs even when a file or directory shares its name
 # (eval/ was silently shadowing `make eval`). The backslash must be the LAST
 # character on the line -- text after it detaches the continuation.
-.PHONY: check lint types migrations imports fmt db-up db-migrate \
+.PHONY: check lint types migrations imports fmt db-up db-migrate db-refresh \
         embed cluster report recluster ingest branch eval \
         api web web-build summarize summarize-dry
 
 VENV     := .venv/bin
 LOCAL_DB := postgresql://postgres:postgres@localhost:5432/presswake
+
+# Targets run against Supabase by default: no DATABASE_URL is set here, so
+# python-dotenv loads it from .env. Add LOCAL=1 for the Docker database:
+#     make api            Supabase -- the real corpus
+#     make api LOCAL=1    Docker scratch
+#
+# One consequence to keep in mind: `make db-migrate` now alters the PRODUCTION
+# schema. That is usually what you want (prod is the only database that has to
+# be current), but a migration you have not tested lands on real data with no
+# undo. Test new migrations with `make db-migrate LOCAL=1` first.
+DB :=
+ifdef LOCAL
+DB := DATABASE_URL=$(LOCAL_DB)
+endif
 
 # ---- what CI runs -----------------------------------------------------
 check: lint imports types migrations
@@ -34,19 +48,31 @@ db-up:
 	  pgvector/pgvector:pg16
 
 db-migrate:
-	DATABASE_URL=$(LOCAL_DB) $(VENV)/alembic upgrade head
+	$(DB) $(VENV)/alembic upgrade head
 
-# ---- pipeline, always against the LOCAL database -----------------------
+# Pull the real corpus down into Docker so local experiments run on current
+# data. Copies outlets and articles only -- stories are derived, so rebuild
+# them with `make recluster`. The script refuses any target but localhost,
+# so this cannot run backwards.
+db-refresh:
+	DATABASE_URL=$(LOCAL_DB) $(VENV)/python scripts/copy_from_supabase.py \
+	  "$$(grep -E '^DATABASE_URL=' .env | cut -d= -f2-)"
+
+# ---- pipeline (local by default; PROD=1 for Supabase) ------------------
 embed:
-	DATABASE_URL=$(LOCAL_DB) $(VENV)/python -m worker.embed
+	$(DB) $(VENV)/python -m worker.embed
 
 cluster:
-	DATABASE_URL=$(LOCAL_DB) $(VENV)/python -m worker.cluster
+	$(DB) $(VENV)/python -m worker.cluster
 
 report:
-	DATABASE_URL=$(LOCAL_DB) $(VENV)/python scripts/cluster_report.py
+	$(DB) $(VENV)/python scripts/cluster_report.py
 
-# the loop you have been running by hand
+# Hard-wired to Docker, no LOCAL=1 needed and no PROD escape hatch: the whole
+# point is the --reset, and cluster.py refuses that off localhost. Pointed at
+# Supabase it would skip the reset and quietly cluster only pending articles
+# -- a different operation wearing the same name. This is the threshold-tuning
+# loop (recluster -> report -> eval), so it belongs on scratch data anyway.
 recluster:
 	DATABASE_URL=$(LOCAL_DB) $(VENV)/python -m worker.cluster --reset
 	DATABASE_URL=$(LOCAL_DB) $(VENV)/python scripts/cluster_report.py
@@ -57,19 +83,19 @@ branch:
 	git switch -c $(name)
 
 eval:
-	DATABASE_URL=$(LOCAL_DB) $(VENV)/python scripts/eval_clustering.py
+	$(DB) $(VENV)/python scripts/eval_clustering.py
 
 # ---- summaries (milestone 5) -------------------------------------------
 # dry first: prints what it WOULD write, calls the LLM, touches nothing.
 summarize-dry:
-	DATABASE_URL=$(LOCAL_DB) $(VENV)/python -m worker.summarize --dry-run --limit 5
+	$(DB) $(VENV)/python -m worker.summarize --dry-run --limit 5
 
 summarize:
-	DATABASE_URL=$(LOCAL_DB) $(VENV)/python -m worker.summarize
+	$(DB) $(VENV)/python -m worker.summarize
 
 # ---- frontend ----------------------------------------------------------
 api:
-	DATABASE_URL=$(LOCAL_DB) $(VENV)/uvicorn app.main:app --reload --port 8000
+	$(DB) $(VENV)/uvicorn app.main:app --reload --port 8000
 
 web:
 	npm --prefix frontend run dev
