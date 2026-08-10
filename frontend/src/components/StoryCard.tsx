@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { FavoriteButton } from "./FavoriteButton";
 import { Sparkline } from "./Sparkline";
 import type { Story } from "../types";
 
@@ -46,6 +47,8 @@ export function StoryCard({ story }: { story: Story }) {
         <span className="ml-auto text-xs tabular-nums text-ink-500 dark:text-white/50">
           {formatSpan(story.span_hours)} span
         </span>
+
+        <FavoriteButton storyId={story.id} />
       </div>
 
       {/* Generated headline when we have one; the seed article's otherwise.

@@ -1,5 +1,6 @@
 import { Link, Route, Routes } from "react-router-dom";
 import { AuthForm } from "./components/AuthForm";
+import { FavoritesPage } from "./components/FavoritesPage";
 import { Feed } from "./components/Feed";
 import { StoryPage } from "./components/StoryPage";
 import { useAuth } from "./lib/auth";
@@ -29,6 +30,12 @@ function HeaderAuth() {
 
   return (
     <nav className="flex items-center gap-3 text-xs">
+      <Link
+        to="/favorites"
+        className="text-ink-500 hover:text-ink-900 dark:text-white/50 dark:hover:text-white"
+      >
+        Saved
+      </Link>
       <span className="text-ink-500 dark:text-white/50">{email}</span>
       <button
         onClick={signOut}
@@ -67,6 +74,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Feed />} />
           <Route path="/story/:storyId" element={<StoryPage />} />
+          <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/login" element={<AuthForm mode="login" />} />
           <Route path="/signup" element={<AuthForm mode="signup" />} />
         </Routes>
