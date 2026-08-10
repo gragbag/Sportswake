@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Sparkline } from "./Sparkline";
 import type { Story } from "../types";
 
@@ -22,7 +23,8 @@ export function StoryCard({ story }: { story: Story }) {
   const remaining = story.outlets.length - shown.length;
 
   return (
-    <article
+    <Link
+      to={`/story/${story.id}`}
       className="group flex flex-col gap-3 rounded-lg border border-ink-200 bg-white p-4
                  transition-colors hover:border-ink-500/40
                  dark:border-white/10 dark:bg-white/5"
@@ -96,6 +98,6 @@ export function StoryCard({ story }: { story: Story }) {
           </span>
         )}
       </div>
-    </article>
+    </Link>
   );
 }

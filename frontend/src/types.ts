@@ -16,3 +16,33 @@ export type Story = {
   /** Article counts bucketed across the story's lifespan, for the sparkline. */
   buckets: number[];
 };
+
+/** One member article of a story, as returned by /api/stories/{id}. */
+export type StoryArticle = {
+  outlet: string;
+  headline: string;
+  url: string;
+  published_at: string;
+};
+
+/**
+ * A single story with every member article. Distinct from Story: the feed
+ * gets outlet names and sparkline buckets, the page gets the real rows.
+ */
+export type StoryDetail = {
+  id: string;
+  title: string;
+  summary_title: string | null;
+  summary_subhead: string | null;
+  summary_bullets: string[] | null;
+  summary_people: string[] | null;
+  summary_model: string | null;
+  summarized_at: string | null;
+  article_count: number;
+  outlet_count: number;
+  first_at: string;
+  last_at: string;
+  span_hours: number;
+  /** Chronological, oldest first. */
+  articles: StoryArticle[];
+};

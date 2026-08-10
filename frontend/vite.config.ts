@@ -7,6 +7,13 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
 
+  // FastAPI mounts the build at /app, so assets must be referenced as
+  // /app/assets/... -- with the default "/" they resolve outside the mount
+  // and 404 in production (invisible in dev, which serves from the root).
+  // Also becomes import.meta.env.BASE_URL, which the router uses as its
+  // basename, so the two can never disagree.
+  base: "/app/",
+
   server: {
     // Dev only. The FastAPI app runs separately on 8000; proxying /api keeps
     // the browser on one origin so there is no CORS to configure.
