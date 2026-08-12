@@ -67,3 +67,13 @@ jobs:
           # exists.
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python -m worker.summarize
+
+      # Retries comments the classifier could not reach when they were
+      # posted. Without this, a provider outage leaves them invisible
+      # forever -- which is the failure that makes moderation read as a bug.
+      - name: Resolve pending comments
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python -m worker.moderate

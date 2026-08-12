@@ -218,6 +218,81 @@ class Favorite(Base):
     )
 
 
+class Comment(Base):
+    """A user's writing about a story.
+
+    One table for two features, per the design note: a private note is this
+    row with visibility='private', a public comment is visibility='public'.
+    Shipping notes later is a flag value, not a new subsystem.
+
+    user_id carries no FK to auth.users for the same reason favorites does
+    not -- that table is Supabase's and absent locally.
+    """
+
+    __tablename__ = "comments"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False))
+    story_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("stories.id"))
+    body: Mapped[str] = mapped_column(Text)
+
+    # 'public' | 'private'. Private rows are the milestone-6 note.
+    visibility: Mapped[str] = mapped_column(String(16), default="public")
+    # 'visible' | 'pending' | 'hidden' | 'removed'. Four states, not a
+    # boolean, so an exhausted moderation quota can hold a comment for review
+    # instead of forcing a choice between publishing it unchecked and
+    # dropping it. Removal is always a status change -- rows are never
+    # deleted, because appeals and repeat-offender detection both need them.
+    status: Mapped[str] = mapped_column(String(16), default="visible")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        # Reading a thread.
+        Index("ix_comments_story_created", "story_id", "created_at"),
+        # Rate limiting: "how many has this user posted since X". Must be
+        # indexed -- it runs before every insert, and an unindexed count over
+        # a growing table is the slowest thing in the request path.
+        Index("ix_comments_user_created", "user_id", "created_at"),
+    )
+
+
+class CommentReport(Base):
+    """A user flagging a comment.
+
+    Exists from the start even though the report button comes later: a
+    moderation queue you cannot populate is not a moderation queue, and
+    adding the table now keeps the button a UI change.
+    """
+
+    __tablename__ = "comment_reports"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
+    comment_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("comments.id")
+    )
+    reporter_id: Mapped[str] = mapped_column(UUID(as_uuid=False))
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        # One report per person per comment; a second is a no-op, not a
+        # louder signal.
+        UniqueConstraint("comment_id", "reporter_id", name="uq_report_comment_user"),
+        Index("ix_comment_reports_unresolved", "resolved_at"),
+    )
+
+
 def make_engine(url: str | None = None, serverless: bool = False):
     """Build an engine.
 

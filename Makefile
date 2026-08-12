@@ -3,7 +3,7 @@
 # character on the line -- text after it detaches the continuation.
 .PHONY: check lint types migrations imports fmt db-up db-migrate db-refresh \
         embed cluster report recluster ingest branch eval \
-        api web web-build summarize summarize-dry
+        api web web-build summarize summarize-dry moderate
 
 VENV     := .venv/bin
 LOCAL_DB := postgresql://postgres:postgres@localhost:5432/presswake
@@ -29,7 +29,7 @@ lint:
 	$(VENV)/ruff check .
 
 imports:
-	$(VENV)/python -c "import common.models, worker.ingest, worker.summarize, app.main"
+	$(VENV)/python -c "import common.models, worker.ingest, worker.summarize, worker.moderate, app.main"
 
 types:
 	$(VENV)/mypy common worker app
@@ -92,6 +92,10 @@ summarize-dry:
 
 summarize:
 	$(DB) $(VENV)/python -m worker.summarize
+
+# Resolve comments that could not be classified when they were posted.
+moderate:
+	$(DB) $(VENV)/python -m worker.moderate
 
 # ---- frontend ----------------------------------------------------------
 api:

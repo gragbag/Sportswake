@@ -45,7 +45,7 @@ jobs:
 
       # Keep this list in sync with the Makefile's `imports` target.
       - name: Imports resolve
-        run: python -c "import common.models, worker.ingest, worker.summarize, app.main"
+        run: python -c "import common.models, worker.ingest, worker.summarize, worker.moderate, app.main"
 
       - name: Type check
         run: mypy common worker app

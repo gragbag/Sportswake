@@ -55,6 +55,82 @@ SUMMARY_MIN_OUTLETS: int = int(os.environ.get("SUMMARY_MIN_OUTLETS", "5"))
 SUMMARY_PACE_SECONDS: int = int(os.environ.get("SUMMARY_PACE_SECONDS", "20"))
 
 
+# ---- comments (milestone 8) ---------------------------------------------
+# Two windows, deliberately. A daily cap alone lets someone spend all ten in
+# ten seconds, which is the shape a flame war takes; the hourly cap stops the
+# burst and the daily cap bounds the total.
+COMMENT_MAX_PER_HOUR: int = int(os.environ.get("COMMENT_MAX_PER_HOUR", "3"))
+COMMENT_MAX_PER_DAY: int = int(os.environ.get("COMMENT_MAX_PER_DAY", "10"))
+# Per user per story, NOT per story. A cap on the story silences the 26th
+# person for being late; this one targets the actual failure, which is one
+# person dominating a thread.
+COMMENT_MAX_PER_STORY: int = int(os.environ.get("COMMENT_MAX_PER_STORY", "5"))
+# Long enough for a real point, short enough to discourage manifestos. The
+# database also has a CHECK at 4000 as a backstop against a client that
+# ignores this.
+COMMENT_MAX_LENGTH: int = int(os.environ.get("COMMENT_MAX_LENGTH", "2000"))
+# Read page size. Bounds the query and the payload without ever closing a
+# thread.
+COMMENT_PAGE_SIZE: int = int(os.environ.get("COMMENT_PAGE_SIZE", "50"))
+
+
+# ---- comment moderation -------------------------------------------------
+OPENAI_API_KEY: str | None = os.environ.get("OPENAI_API_KEY")
+# "openai" | "groq". Both sit behind one interface in app/moderation.py, so
+# losing an account is an env change rather than a rewrite -- the same reason
+# SUMMARY_BASE_URL exists.
+MODERATION_PROVIDER: str = os.environ.get("MODERATION_PROVIDER", "openai")
+MODERATION_OPENAI_URL: str = "https://api.openai.com/v1/moderations"
+MODERATION_OPENAI_MODEL: str = "omni-moderation-latest"
+# Groq fallback. Deliberately the small model: this is classification, not
+# synthesis, and Groq's limits are PER MODEL -- 8b-instant has its own
+# 14,400 req/day pool, so comment traffic cannot starve summarization on
+# gpt-oss-120b.
+MODERATION_GROQ_MODEL: str = os.environ.get(
+    "MODERATION_GROQ_MODEL", "llama-3.1-8b-instant"
+)
+# Short: this call sits in the comment POST path. A slow classifier should
+# park the comment for retry, not make the user wait.
+MODERATION_TIMEOUT_SECONDS: float = float(
+    os.environ.get("MODERATION_TIMEOUT_SECONDS", "5")
+)
+
+# Per-category thresholds, not one threshold on the maximum score.
+#
+# Measured on sample comments: "Stevens is a corrupt sellout... anyone who
+# voted for her is an idiot" scores harassment 0.89, while "these people are
+# animals and don't belong in our country" scores harassment 0.88 -- the max
+# cannot tell them apart. What separates them is hate: 0.33 vs 0.57.
+#
+# So harassment is deliberately loose (robust political argument lives
+# there, and a politics site that deletes it has no comment section worth
+# having) while hate and violence are strict. The two at 0.2 are categories
+# where a false negative is catastrophic and a false positive costs nothing.
+MODERATION_THRESHOLDS: dict[str, float] = {
+    # False negative catastrophic, false positive costs nothing.
+    "sexual/minors": 0.2,
+    "self-harm/instructions": 0.2,
+    # Clean discriminators. Measured near zero on every acceptable sample
+    # and high on genuine abuse -- "kill yourself, loser" scores
+    # harassment/threatening 0.76 and self-harm/intent 0.94, while harsh
+    # political comment scores 0.001 and 0.0002 on the same two.
+    "harassment/threatening": 0.5,
+    "hate/threatening": 0.5,
+    "illicit/violent": 0.5,
+    "self-harm/intent": 0.5,
+    "violence": 0.5,
+    # Separates dehumanising language (0.57) from political anger (0.33).
+    "hate": 0.5,
+    # Deliberately near-inert. Measured: mild rudeness 0.81, criticism of a
+    # writer 0.84, harsh political comment 0.89, real abuse 0.96. There is
+    # no threshold that removes the last without removing the first three,
+    # so this sits above ordinary anger and the real work is done by the
+    # categories above. A politics site that deletes "anyone who voted for
+    # her is an idiot" has no comment section worth having.
+    "harassment": 0.95,
+}
+
+
 # ---- auth (milestone 6) -------------------------------------------------
 def _project_ref() -> str | None:
     """Pull the Supabase project ref out of DATABASE_URL.

@@ -16,11 +16,20 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from sqlalchemy import bindparam, func, select, text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.auth import current_user
+from app.moderation import classify
+from common.config import (
+    COMMENT_MAX_LENGTH,
+    COMMENT_MAX_PER_DAY,
+    COMMENT_MAX_PER_HOUR,
+    COMMENT_MAX_PER_STORY,
+    COMMENT_PAGE_SIZE,
+)
 from common.models import (
     Article,
     FetchRun,
@@ -354,6 +363,158 @@ def api_favorite_remove(
         )
         session.commit()
     return Response(status_code=204)
+
+
+class CommentIn(BaseModel):
+    body: str
+
+
+def _check_rate_limits(session, user_id: str, story_id: str) -> None:
+    """Raise 429 if the user is over any limit. Runs BEFORE moderation.
+
+    Order matters more than the limits themselves: this is one indexed query
+    against a local table, whereas moderation is a network call. Check the
+    free thing first and a spammer's cost stays at a database round trip
+    instead of an API call per attempt.
+
+    Counts rows over a trailing window rather than decrementing a stored
+    counter -- the same reasoning the summary quota uses. Counters drift and
+    cannot be audited after a bug; a count is always the truth.
+    """
+    counts = session.execute(
+        text("""
+            select
+              count(*) filter (where created_at > now() - interval '1 hour') as hour,
+              count(*) filter (where created_at > now() - interval '1 day')  as day,
+              count(*) filter (where story_id = :sid)                        as story
+            from comments
+            where user_id = :uid and status <> 'removed'
+        """),
+        {"uid": user_id, "sid": story_id},
+    ).one()
+
+    # Removed comments still count toward the story cap above but not toward
+    # rate windows, so deleting spam does not hand back budget to spam.
+    if counts.hour >= COMMENT_MAX_PER_HOUR:
+        raise HTTPException(429, f"limit is {COMMENT_MAX_PER_HOUR} comments per hour")
+    if counts.day >= COMMENT_MAX_PER_DAY:
+        raise HTTPException(429, f"limit is {COMMENT_MAX_PER_DAY} comments per day")
+    if counts.story >= COMMENT_MAX_PER_STORY:
+        raise HTTPException(429, f"limit is {COMMENT_MAX_PER_STORY} comments per story")
+
+
+@app.get("/api/stories/{story_id}/comments")
+def api_comments(story_id: str, limit: int = COMMENT_PAGE_SIZE) -> list[dict]:
+    """Public comments on a story, oldest first.
+
+    Paginated rather than capped: bounding the query never closes a thread.
+    Only 'visible' rows are returned -- pending, hidden, and removed are all
+    invisible to readers, and the distinction matters only to moderation.
+    """
+    _valid_uuid(story_id)
+    with Session() as session:
+        rows = session.execute(
+            text("""
+                select id, user_id, body, created_at, edited_at
+                from comments
+                where story_id = :sid
+                  and visibility = 'public'
+                  and status = 'visible'
+                order by created_at
+                limit :limit
+            """),
+            {"sid": story_id, "limit": min(limit, COMMENT_PAGE_SIZE)},
+        ).all()
+
+    return [
+        {
+            "id": str(r.id),
+            # The author's uuid, not their email: an email address is
+            # personal data and does not belong in a public payload.
+            "user_id": str(r.user_id),
+            "body": r.body,
+            "created_at": r.created_at.isoformat(),
+            "edited_at": r.edited_at.isoformat() if r.edited_at else None,
+        }
+        for r in rows
+    ]
+
+
+@app.post("/api/stories/{story_id}/comments", status_code=201)
+def api_comment_create(
+    story_id: str,
+    payload: CommentIn,
+    user: Annotated[dict, Depends(current_user)],
+) -> dict:
+    """Post a comment. Checks run cheapest-first."""
+    _valid_uuid(story_id)
+
+    body = payload.body.strip()
+    # 1. Free checks, no database round trip at all.
+    if not body:
+        raise HTTPException(422, "comment is empty")
+    if len(body) > COMMENT_MAX_LENGTH:
+        raise HTTPException(422, f"comment exceeds {COMMENT_MAX_LENGTH} characters")
+
+    with Session() as session:
+        if (
+            session.execute(
+                text("select 1 from stories where id = :sid"), {"sid": story_id}
+            ).first()
+            is None
+        ):
+            raise HTTPException(404, "story not found")
+
+        # 2. Indexed count, still free.
+        _check_rate_limits(session, user["sub"], story_id)
+
+        # 3. Duplicate guard: reposting identical text is the cheapest spam
+        #    there is, and catching it here costs one more indexed lookup.
+        if (
+            session.execute(
+                text("""
+                select 1 from comments
+                where user_id = :uid and story_id = :sid and body = :body
+                  and status <> 'removed'
+            """),
+                {"uid": user["sub"], "sid": story_id, "body": body},
+            ).first()
+            is not None
+        ):
+            raise HTTPException(409, "you already posted that")
+
+        # 4. The only paid check, and only reached by comments that already
+        #    passed everything free. classify() never raises -- a failure
+        #    returns 'pending', so the comment is stored either way and the
+        #    retry worker resolves it.
+        verdict = classify(body)
+
+        row = session.execute(
+            text("""
+                insert into comments (id, user_id, story_id, body, status)
+                values (gen_random_uuid(), :uid, :sid, :body, :status)
+                returning id, created_at
+            """),
+            {
+                "uid": user["sub"],
+                "sid": story_id,
+                "body": body,
+                "status": verdict.status,
+            },
+        ).one()
+        session.commit()
+
+    return {
+        "id": str(row.id),
+        "user_id": user["sub"],
+        "body": body,
+        "created_at": row.created_at.isoformat(),
+        "edited_at": None,
+        # The author is told what happened to their own comment. Silently
+        # storing a removed comment and rendering nothing is what makes
+        # moderation feel like a bug.
+        "status": verdict.status,
+    }
 
 
 @app.get("/api/stories/{story_id}")
