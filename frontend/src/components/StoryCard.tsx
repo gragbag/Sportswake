@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { FavoriteButton } from "./FavoriteButton";
 import { Sparkline } from "./Sparkline";
+import { timeAgo } from "../lib/time";
 import type { Story } from "../types";
 
 /** "45m", "18h", "2d" -- compact enough to sit inline next to the outlet count. */
@@ -8,13 +9,6 @@ function formatSpan(hours: number): string {
   if (hours < 1) return `${Math.round(hours * 60)}m`;
   if (hours < 48) return `${Math.round(hours)}h`;
   return `${Math.round(hours / 24)}d`;
-}
-
-function timeAgo(iso: string): string {
-  const minutes = (Date.now() - new Date(iso).getTime()) / 60000;
-  if (minutes < 60) return `${Math.max(1, Math.round(minutes))}m ago`;
-  if (minutes < 2880) return `${Math.round(minutes / 60)}h ago`;
-  return `${Math.round(minutes / 1440)}d ago`;
 }
 
 const CHIP_LIMIT = 5;

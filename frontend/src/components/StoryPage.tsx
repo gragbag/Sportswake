@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { CommentThread } from "./CommentThread";
 import { FavoriteButton } from "./FavoriteButton";
 import type { StoryArticle, StoryDetail } from "../types";
 
@@ -162,6 +163,7 @@ export function StoryPage() {
               human.
             </p>
           )}
+          <CommentThread storyId={story.id} />
         </article>
 
         {/* Coverage: one row per outlet, ordered by who published first.

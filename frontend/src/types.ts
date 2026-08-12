@@ -17,6 +17,16 @@ export type Story = {
   buckets: number[];
 };
 
+export type Comment = {
+  id: string;
+  /** Author's Supabase user id. Not their email -- that is personal data and
+   *  does not belong in a public payload. Display names would replace this. */
+  user_id: string;
+  body: string;
+  created_at: string;
+  edited_at: string | null;
+};
+
 /** One member article of a story, as returned by /api/stories/{id}. */
 export type StoryArticle = {
   outlet: string;

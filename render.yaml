@@ -3,7 +3,15 @@ services:
     name: presswake
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    # The frontend is built here, not committed: app/main.py only mounts
+    # /app when frontend/dist exists, so without this step every React route
+    # (cards, story pages, auth, favorites, comments) 404s in production
+    # while the API keeps working -- a failure that looks like a routing bug.
+    #
+    # This assumes Node is present on Render's Python image. If the deploy
+    # fails with "npm: not found", the fallback is a second Render service
+    # of type: web / runtime: static with staticPublishPath frontend/dist.
+    buildCommand: npm --prefix frontend ci && npm --prefix frontend run build && pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     envVars:
@@ -13,3 +21,21 @@ services:
         sync: false
       - key: PYTHON_VERSION
         value: "3.12"
+
+      # Read by Vite at BUILD time and baked into the bundle, so they must
+      # exist before the build step runs, not just at runtime. Missing ones
+      # do not crash anything -- the sign-in page renders an "auth is not
+      # configured" notice instead, which is easy to miss.
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+
+      # Comment moderation runs inside the request path, so the API needs
+      # these too -- CI having them is not enough. Without a key every
+      # comment is stored 'pending' and never appears until worker/moderate
+      # resolves it on the next hourly run.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
