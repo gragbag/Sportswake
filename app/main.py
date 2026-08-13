@@ -669,6 +669,15 @@ def api_comment_edit(
     The edited text is re-classified. Skipping that would make editing a
     trivial moderation bypass: post something innocuous, wait for it to pass,
     then change it to whatever you actually wanted to say.
+
+    A rejected edit is DISCARDED, not applied -- the comment keeps the text
+    that was already approved and stays visible and editable. The earlier
+    design applied the edit and let it be removed, which froze the comment,
+    because a removed one cannot be edited again. That punished the case it
+    was least meant for: quoting a threat in order to condemn it scores high
+    on violence, and losing your comment for discussing what someone said is
+    a bad trade against an attacker who can test wording directly against
+    the classifier's own free public endpoint anyway.
     """
     _valid_uuid(comment_id)
     body = payload.body.strip()
@@ -693,17 +702,34 @@ def api_comment_edit(
 
         verdict = classify(body)
 
+        if verdict.status == "removed":
+            # Nothing is written. The caller is told plainly so they can
+            # reword, rather than discovering their comment vanished.
+            raise HTTPException(
+                422,
+                "That edit was not accepted by moderation, so your comment is "
+                "unchanged. Try rewording it.",
+            )
+        if verdict.status == "pending":
+            # Deliberately unlike the create path, which stores a pending
+            # comment and lets the retry worker resolve it. Here there is an
+            # already-approved version to protect, so an unverifiable edit
+            # waits rather than replacing it.
+            raise HTTPException(
+                503, "Moderation is unavailable right now. Try again shortly."
+            )
+
         session.execute(
             text("""
                 update comments
-                set body = :body, edited_at = now(), status = :status
+                set body = :body, edited_at = now(), status = 'visible'
                 where id = :cid
             """),
-            {"body": body, "status": verdict.status, "cid": comment_id},
+            {"body": body, "cid": comment_id},
         )
         session.commit()
 
-    return {"id": comment_id, "body": body, "status": verdict.status}
+    return {"id": comment_id, "body": body, "status": "visible"}
 
 
 @app.delete("/api/comments/{comment_id}")
