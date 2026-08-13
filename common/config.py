@@ -72,6 +72,10 @@ COMMENT_MAX_LENGTH: int = int(os.environ.get("COMMENT_MAX_LENGTH", "2000"))
 # Read page size. Bounds the query and the payload without ever closing a
 # thread.
 COMMENT_PAGE_SIZE: int = int(os.environ.get("COMMENT_PAGE_SIZE", "50"))
+# Nesting cap. 0 is top level, so 3 allows a reply, a counter-reply, and one
+# more. Unlimited nesting indents into a column two characters wide and
+# multiplies the moderation surface without deepening the conversation.
+COMMENT_MAX_DEPTH: int = int(os.environ.get("COMMENT_MAX_DEPTH", "3"))
 
 
 # ---- profiles -----------------------------------------------------------

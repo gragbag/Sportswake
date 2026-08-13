@@ -28,6 +28,7 @@ from app.auth import current_user, optional_user
 from app.handles import derive_handle
 from app.moderation import classify
 from common.config import (
+    COMMENT_MAX_DEPTH,
     COMMENT_MAX_LENGTH,
     COMMENT_MAX_PER_DAY,
     COMMENT_MAX_PER_HOUR,
@@ -612,6 +613,7 @@ def api_favorite_remove(
 
 class CommentIn(BaseModel):
     body: str
+    parent_id: str | None = None
 
 
 def _check_rate_limits(session, user_id: str, story_id: str) -> None:
@@ -650,6 +652,87 @@ def _check_rate_limits(session, user_id: str, story_id: str) -> None:
 
 class VoteIn(BaseModel):
     value: int
+
+
+class CommentEditIn(BaseModel):
+    body: str
+
+
+@app.patch("/api/comments/{comment_id}")
+def api_comment_edit(
+    comment_id: str,
+    payload: CommentEditIn,
+    user: Annotated[dict, Depends(current_user)],
+) -> dict:
+    """Edit your own comment.
+
+    The edited text is re-classified. Skipping that would make editing a
+    trivial moderation bypass: post something innocuous, wait for it to pass,
+    then change it to whatever you actually wanted to say.
+    """
+    _valid_uuid(comment_id)
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(422, "comment is empty")
+    if len(body) > COMMENT_MAX_LENGTH:
+        raise HTTPException(422, f"comment exceeds {COMMENT_MAX_LENGTH} characters")
+
+    with Session() as session:
+        row = session.execute(
+            text("select user_id, status from comments where id = :cid"),
+            {"cid": comment_id},
+        ).one_or_none()
+        if row is None:
+            raise HTTPException(404, "comment not found")
+        if str(row.user_id) != user["sub"]:
+            # 404 rather than 403: whether someone else's comment id exists
+            # is not information this caller needs.
+            raise HTTPException(404, "comment not found")
+        if row.status in ("deleted", "removed"):
+            raise HTTPException(409, "that comment is no longer editable")
+
+        verdict = classify(body)
+
+        session.execute(
+            text("""
+                update comments
+                set body = :body, edited_at = now(), status = :status
+                where id = :cid
+            """),
+            {"body": body, "status": verdict.status, "cid": comment_id},
+        )
+        session.commit()
+
+    return {"id": comment_id, "body": body, "status": verdict.status}
+
+
+@app.delete("/api/comments/{comment_id}")
+def api_comment_delete(
+    comment_id: str, user: Annotated[dict, Depends(current_user)]
+) -> dict:
+    """Withdraw your own comment.
+
+    A status change, never a row delete. If the comment has replies it stays
+    as a tombstone so the answers beneath it still make sense; if it has
+    none, the read query drops it entirely. Either way the text stops being
+    served, and the row survives for moderation history.
+    """
+    _valid_uuid(comment_id)
+    with Session() as session:
+        row = session.execute(
+            text("select user_id from comments where id = :cid"),
+            {"cid": comment_id},
+        ).one_or_none()
+        if row is None or str(row.user_id) != user["sub"]:
+            raise HTTPException(404, "comment not found")
+
+        session.execute(
+            text("update comments set status = 'deleted' where id = :cid"),
+            {"cid": comment_id},
+        )
+        session.commit()
+
+    return {"id": comment_id, "status": "deleted"}
 
 
 class PrivacyIn(BaseModel):
@@ -755,7 +838,8 @@ def api_comments(
         rows = session.execute(
             text(f"""
                 select c.id, c.user_id, p.username, c.body,
-                       c.created_at, c.edited_at,
+                       c.created_at, c.edited_at, c.parent_id, c.depth,
+                       c.status,
                        coalesce(v.score, 0) as score,
                        coalesce(mine.value, 0) as my_vote
                 from comments c
@@ -767,7 +851,16 @@ def api_comments(
                 {_VOTE_JOIN}
                 where c.story_id = :sid
                   and c.visibility = 'public'
-                  and c.status = 'visible'
+                  and (
+                    c.status = 'visible'
+                    -- A withdrawn or removed comment stays ONLY while it has
+                    -- replies, as a tombstone. Dropping it would orphan the
+                    -- answers beneath it; keeping childless ones would
+                    -- litter the thread with scars nobody can read.
+                    or (c.status in ('deleted', 'removed')
+                        and exists (select 1 from comments child
+                                    where child.parent_id = c.id))
+                  )
                 -- created_at breaks ties so ordering is stable across
                 -- reloads; without it equal-scoring comments shuffle.
                 order by coalesce(v.score, 0) desc, c.created_at
@@ -785,16 +878,23 @@ def api_comments(
 
 def _comment_payload(r) -> dict:
     """One comment as the API returns it, wherever it is being listed."""
+    status = getattr(r, "status", "visible")
+    gone = status in ("deleted", "removed")
     return {
         "id": str(r.id),
+        "parent_id": str(r.parent_id) if getattr(r, "parent_id", None) else None,
+        "depth": getattr(r, "depth", 0),
+        "status": status,
         # The author's uuid, not their email: an email address is personal
         # data and does not belong in a public payload. The frontend needs
         # it only to mark a comment as its own.
         "user_id": str(r.user_id),
         # Resolved server-side so every surface agrees on what to call
         # someone, rather than each component reimplementing the fallback.
-        "author": r.username or derive_handle(str(r.user_id)),
-        "body": r.body,
+        # A tombstone has no author and no text. The row keeps both for
+        # moderation history; the API simply stops serving them.
+        "author": None if gone else (r.username or derive_handle(str(r.user_id))),
+        "body": None if gone else r.body,
         "created_at": r.created_at.isoformat(),
         "edited_at": r.edited_at.isoformat() if r.edited_at else None,
         "score": r.score,
@@ -827,6 +927,27 @@ def api_comment_create(
         ):
             raise HTTPException(404, "story not found")
 
+        # A reply inherits its parent's depth plus one. Reading the parent
+        # also confirms it belongs to THIS story -- otherwise a crafted
+        # parent_id could graft a reply onto a thread it was never part of.
+        depth = 0
+        parent_id = payload.parent_id
+        if parent_id is not None:
+            _valid_uuid(parent_id)
+            parent = session.execute(
+                text("""
+                    select depth, story_id from comments
+                    where id = :pid
+                      and status in ('visible', 'deleted', 'removed')
+                """),
+                {"pid": parent_id},
+            ).one_or_none()
+            if parent is None or str(parent.story_id) != story_id:
+                raise HTTPException(404, "parent comment not found")
+            depth = parent.depth + 1
+            if depth > COMMENT_MAX_DEPTH:
+                raise HTTPException(422, "this thread is too deep to reply to")
+
         # 2. Indexed count, still free.
         _check_rate_limits(session, user["sub"], story_id)
 
@@ -853,13 +974,17 @@ def api_comment_create(
 
         row = session.execute(
             text("""
-                insert into comments (id, user_id, story_id, body, status)
-                values (gen_random_uuid(), :uid, :sid, :body, :status)
+                insert into comments
+                    (id, user_id, story_id, parent_id, depth, body, status)
+                values
+                    (gen_random_uuid(), :uid, :sid, :pid, :depth, :body, :status)
                 returning id, created_at
             """),
             {
                 "uid": user["sub"],
                 "sid": story_id,
+                "pid": parent_id,
+                "depth": depth,
                 "body": body,
                 "status": verdict.status,
             },
@@ -875,6 +1000,9 @@ def api_comment_create(
 
     return {
         "id": str(row.id),
+        "parent_id": parent_id,
+        "depth": depth,
+        "status": verdict.status,
         "user_id": user["sub"],
         "author": chosen or derive_handle(user["sub"]),
         "body": body,
@@ -885,10 +1013,6 @@ def api_comment_create(
         # neighbours.
         "score": 0,
         "my_vote": 0,
-        # The author is told what happened to their own comment. Silently
-        # storing a removed comment and rendering nothing is what makes
-        # moderation feel like a bug.
-        "status": verdict.status,
     }
 
 

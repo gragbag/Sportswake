@@ -284,15 +284,22 @@ class Comment(Base):
     )
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False))
     story_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("stories.id"))
+    # Null for a top-level comment. Never changes after insert, which is why
+    # depth below can be stored rather than walked.
+    parent_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("comments.id")
+    )
+    depth: Mapped[int] = mapped_column(SmallInteger, default=0)
     body: Mapped[str] = mapped_column(Text)
 
     # 'public' | 'private'. Private rows are the milestone-6 note.
     visibility: Mapped[str] = mapped_column(String(16), default="public")
-    # 'visible' | 'pending' | 'hidden' | 'removed'. Four states, not a
-    # boolean, so an exhausted moderation quota can hold a comment for review
-    # instead of forcing a choice between publishing it unchecked and
-    # dropping it. Removal is always a status change -- rows are never
-    # deleted, because appeals and repeat-offender detection both need them.
+    # 'visible' | 'pending' | 'hidden' | 'removed' | 'deleted'. Not a
+    # boolean, so an exhausted moderation quota can hold a comment for
+    # review instead of forcing a choice between publishing it unchecked and
+    # dropping it -- and so author deletion ('deleted') stays distinct from
+    # moderation ('removed'). Rows are never actually deleted: appeals,
+    # repeat-offender detection and orphaned replies all need them.
     status: Mapped[str] = mapped_column(String(16), default="visible")
 
     created_at: Mapped[datetime] = mapped_column(
@@ -303,6 +310,7 @@ class Comment(Base):
     __table_args__ = (
         # Reading a thread.
         Index("ix_comments_story_created", "story_id", "created_at"),
+        Index("ix_comments_parent", "parent_id"),
         # Rate limiting: "how many has this user posted since X". Must be
         # indexed -- it runs before every insert, and an unindexed count over
         # a growing table is the slowest thing in the request path.

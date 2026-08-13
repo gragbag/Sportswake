@@ -31,11 +31,19 @@ export type Profile = {
 
 export type Comment = {
   id: string;
+  /** Null for a top-level comment. */
+  parent_id: string | null;
+  /** 0 at top level; the API caps how deep a reply may go. */
+  depth: number;
+  /** 'visible' | 'deleted' | 'removed'. The last two are tombstones and
+   *  arrive with author and body null. */
+  status: string;
   /** Author's Supabase user id -- used only to mark a comment as your own. */
   user_id: string;
-  /** Display name, resolved server-side so every surface agrees. */
-  author: string;
-  body: string;
+  /** Resolved server-side so every surface agrees. Null on a tombstone. */
+  author: string | null;
+  /** Null on a tombstone -- the row keeps its text, the API stops serving it. */
+  body: string | null;
   created_at: string;
   edited_at: string | null;
   /** Net score: upvotes minus downvotes. */
@@ -43,6 +51,9 @@ export type Comment = {
   /** The viewer's own vote: 1, -1, or 0 when they have not voted. */
   my_vote: number;
 };
+
+/** A comment with its replies attached, built client-side from the flat list. */
+export type CommentNodeData = Comment & { replies: CommentNodeData[] };
 
 /** A comment as listed on a user's profile, where the story is the context. */
 export type ProfileComment = Comment & {
