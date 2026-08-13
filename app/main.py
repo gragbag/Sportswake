@@ -8,8 +8,10 @@ and the number went up.
 from __future__ import annotations
 
 import html
+import re
 import sys
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -18,17 +20,22 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import bindparam, func, select, text
+from sqlalchemy.exc import IntegrityError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.auth import current_user
+from app.auth import current_user, optional_user
+from app.handles import derive_handle
 from app.moderation import classify
 from common.config import (
+    COMMENT_MAX_DEPTH,
     COMMENT_MAX_LENGTH,
     COMMENT_MAX_PER_DAY,
     COMMENT_MAX_PER_HOUR,
     COMMENT_MAX_PER_STORY,
     COMMENT_PAGE_SIZE,
+    USERNAME_COOLDOWN_DAYS,
+    USERNAME_RESERVED,
 )
 from common.models import (
     Article,
@@ -37,6 +44,7 @@ from common.models import (
     Story,
     make_engine,
     make_session_factory,
+    utcnow,
 )
 
 # serverless=True -> no client-side pooling. Use the transaction-mode pooler
@@ -269,6 +277,244 @@ def api_me(user: Annotated[dict, Depends(current_user)]) -> dict:
     }
 
 
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,20}$")
+
+
+class UsernameIn(BaseModel):
+    username: str
+
+
+def _validate_username(raw: str) -> str:
+    """Return the cleaned username or raise 422. Format rules only."""
+    name = raw.strip()
+    if not _USERNAME_RE.match(name):
+        raise HTTPException(
+            422, "3-20 characters, letters, numbers and underscore only"
+        )
+    if name.lower() in USERNAME_RESERVED:
+        raise HTTPException(422, "that name is reserved")
+    return name
+
+
+@app.get("/api/profile")
+def api_profile(user: Annotated[dict, Depends(current_user)]) -> dict:
+    """The signed-in user's own profile.
+
+    `handle` is what actually renders: the chosen username when there is
+    one, the derived handle otherwise. `username` stays null so the settings
+    form can tell "I picked this" from "this was assigned to me".
+    """
+    with Session() as session:
+        row = session.execute(
+            text("""
+                select username, username_changed_at, hide_comment_history
+                from profiles where user_id = :uid
+            """),
+            {"uid": user["sub"]},
+        ).one_or_none()
+
+    username = row.username if row else None
+    changed_at = row.username_changed_at if row else None
+
+    # Surfaced so the UI can disable the form and say when, rather than
+    # letting someone type a name and only then be told no.
+    next_change = None
+    if changed_at:
+        next_change = changed_at + timedelta(days=USERNAME_COOLDOWN_DAYS)
+
+    return {
+        "user_id": user["sub"],
+        "email": user.get("email"),
+        "username": username,
+        "handle": username or derive_handle(user["sub"]),
+        "can_change_at": next_change.isoformat() if next_change else None,
+        "hide_comment_history": bool(row.hide_comment_history) if row else False,
+    }
+
+
+@app.get("/api/username-available")
+def api_username_available(username: str) -> dict:
+    """Advisory check for the rename form.
+
+    Public because it is only usable by someone already choosing a name, and
+    a username is public by nature -- it appears on every comment. Email
+    existence is the thing worth hiding, and this endpoint never touches it.
+    """
+    try:
+        name = _validate_username(username)
+    except HTTPException as exc:
+        return {"available": False, "reason": exc.detail}
+
+    with Session() as session:
+        taken = session.execute(
+            text("select 1 from profiles where lower(username) = lower(:n)"),
+            {"n": name},
+        ).first()
+
+    return {"available": taken is None, "reason": None if taken is None else "taken"}
+
+
+@app.patch("/api/profile")
+def api_profile_update(
+    payload: UsernameIn, user: Annotated[dict, Depends(current_user)]
+) -> dict:
+    """Choose or change a username."""
+    name = _validate_username(payload.username)
+
+    with Session() as session:
+        existing = session.execute(
+            text("""
+                select username, username_changed_at
+                from profiles where user_id = :uid
+            """),
+            {"uid": user["sub"]},
+        ).one_or_none()
+
+        # No-op rather than burning the cooldown on a form resubmit.
+        if existing and existing.username == name:
+            return {"username": name, "handle": name}
+
+        if existing and existing.username_changed_at:
+            ready = existing.username_changed_at + timedelta(
+                days=USERNAME_COOLDOWN_DAYS
+            )
+            if utcnow() < ready:
+                raise HTTPException(
+                    429, f"you can change your username again after {ready:%b %d, %Y}"
+                )
+
+        # The unique index is the real arbiter -- the availability check
+        # above it is advisory and can lose a race.
+        try:
+            session.execute(
+                text("""
+                    insert into profiles (user_id, username, username_changed_at)
+                    values (:uid, :name, now())
+                    on conflict (user_id) do update
+                        set username = excluded.username,
+                            username_changed_at = now()
+                """),
+                {"uid": user["sub"], "name": name},
+            )
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            raise HTTPException(409, "that username is taken") from None
+
+    return {"username": name, "handle": name}
+
+
+@app.patch("/api/profile/privacy")
+def api_profile_privacy(
+    payload: PrivacyIn, user: Annotated[dict, Depends(current_user)]
+) -> dict:
+    """Show or hide the aggregated comment history on the public profile.
+
+    Hiding does not unpublish anything -- individual comments stay on their
+    story pages, because deleting them is a different action with different
+    consequences for the threads they are part of.
+    """
+    with Session() as session:
+        session.execute(
+            text("""
+                insert into profiles (user_id, hide_comment_history)
+                values (:uid, :hide)
+                on conflict (user_id) do update
+                    set hide_comment_history = excluded.hide_comment_history
+            """),
+            {"uid": user["sub"], "hide": payload.hide_comment_history},
+        )
+        session.commit()
+    return {"hide_comment_history": payload.hide_comment_history}
+
+
+@app.get("/api/users/{handle}")
+def api_public_profile(
+    handle: str, viewer: Annotated[dict | None, Depends(optional_user)]
+) -> dict:
+    """A public profile, addressed by chosen username or user id.
+
+    Both work because most people never choose a name: their handle is
+    derived from the uuid and cannot be reversed, so the id is the only
+    thing that addresses them.
+    """
+    viewer_id = viewer["sub"] if viewer else None
+
+    with Session() as session:
+        row = session.execute(
+            text("""
+                select user_id, username, hide_comment_history, created_at
+                from profiles where lower(username) = lower(:h)
+            """),
+            {"h": handle},
+        ).one_or_none()
+
+        user_id = str(row.user_id) if row else None
+        if user_id is None:
+            # Not a chosen username -- try it as a user id.
+            try:
+                uuid.UUID(handle)
+            except ValueError:
+                raise HTTPException(404, "no such user") from None
+            user_id = handle
+            row = session.execute(
+                text("""
+                    select user_id, username, hide_comment_history, created_at
+                    from profiles where user_id = :uid
+                """),
+                {"uid": user_id},
+            ).one_or_none()
+
+        hidden = bool(row.hide_comment_history) if row else False
+        # Your own history is always visible to you, or the toggle would
+        # hide the thing you are trying to check.
+        show = (not hidden) or viewer_id == user_id
+
+        comments = []
+        if show:
+            rows = session.execute(
+                text(f"""
+                    select c.id, c.user_id, p.username, c.body,
+                           c.created_at, c.edited_at,
+                           coalesce(v.score, 0) as score,
+                           coalesce(mine.value, 0) as my_vote,
+                           c.story_id,
+                           coalesce(s.summary_title, s.title) as story_title
+                    from comments c
+                    left join profiles p on p.user_id = c.user_id
+                    join stories s on s.id = c.story_id
+                    {_VOTE_JOIN}
+                    where c.user_id = :uid
+                      and c.visibility = 'public'
+                      and c.status = 'visible'
+                    order by c.created_at desc
+                    limit :limit
+                """),
+                {
+                    "uid": user_id,
+                    "viewer": viewer_id,
+                    "limit": COMMENT_PAGE_SIZE,
+                },
+            ).all()
+            comments = [
+                {
+                    **_comment_payload(r),
+                    "story_id": str(r.story_id),
+                    "story_title": r.story_title,
+                }
+                for r in rows
+            ]
+
+    return {
+        "user_id": user_id,
+        "handle": (row.username if row and row.username else derive_handle(user_id)),
+        "joined_at": row.created_at.isoformat() if row else None,
+        "is_self": viewer_id == user_id,
+        "history_hidden": hidden,
+        "comments": comments,
+    }
+
+
 def _valid_uuid(value: str) -> str:
     """404 rather than 500 on a malformed id.
 
@@ -367,6 +613,7 @@ def api_favorite_remove(
 
 class CommentIn(BaseModel):
     body: str
+    parent_id: str | None = None
 
 
 def _check_rate_limits(session, user_id: str, story_id: str) -> None:
@@ -403,41 +650,256 @@ def _check_rate_limits(session, user_id: str, story_id: str) -> None:
         raise HTTPException(429, f"limit is {COMMENT_MAX_PER_STORY} comments per story")
 
 
-@app.get("/api/stories/{story_id}/comments")
-def api_comments(story_id: str, limit: int = COMMENT_PAGE_SIZE) -> list[dict]:
-    """Public comments on a story, oldest first.
+class VoteIn(BaseModel):
+    value: int
 
-    Paginated rather than capped: bounding the query never closes a thread.
+
+class CommentEditIn(BaseModel):
+    body: str
+
+
+@app.patch("/api/comments/{comment_id}")
+def api_comment_edit(
+    comment_id: str,
+    payload: CommentEditIn,
+    user: Annotated[dict, Depends(current_user)],
+) -> dict:
+    """Edit your own comment.
+
+    The edited text is re-classified. Skipping that would make editing a
+    trivial moderation bypass: post something innocuous, wait for it to pass,
+    then change it to whatever you actually wanted to say.
+    """
+    _valid_uuid(comment_id)
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(422, "comment is empty")
+    if len(body) > COMMENT_MAX_LENGTH:
+        raise HTTPException(422, f"comment exceeds {COMMENT_MAX_LENGTH} characters")
+
+    with Session() as session:
+        row = session.execute(
+            text("select user_id, status from comments where id = :cid"),
+            {"cid": comment_id},
+        ).one_or_none()
+        if row is None:
+            raise HTTPException(404, "comment not found")
+        if str(row.user_id) != user["sub"]:
+            # 404 rather than 403: whether someone else's comment id exists
+            # is not information this caller needs.
+            raise HTTPException(404, "comment not found")
+        if row.status in ("deleted", "removed"):
+            raise HTTPException(409, "that comment is no longer editable")
+
+        verdict = classify(body)
+
+        session.execute(
+            text("""
+                update comments
+                set body = :body, edited_at = now(), status = :status
+                where id = :cid
+            """),
+            {"body": body, "status": verdict.status, "cid": comment_id},
+        )
+        session.commit()
+
+    return {"id": comment_id, "body": body, "status": verdict.status}
+
+
+@app.delete("/api/comments/{comment_id}")
+def api_comment_delete(
+    comment_id: str, user: Annotated[dict, Depends(current_user)]
+) -> dict:
+    """Withdraw your own comment.
+
+    A status change, never a row delete. If the comment has replies it stays
+    as a tombstone so the answers beneath it still make sense; if it has
+    none, the read query drops it entirely. Either way the text stops being
+    served, and the row survives for moderation history.
+    """
+    _valid_uuid(comment_id)
+    with Session() as session:
+        row = session.execute(
+            text("select user_id from comments where id = :cid"),
+            {"cid": comment_id},
+        ).one_or_none()
+        if row is None or str(row.user_id) != user["sub"]:
+            raise HTTPException(404, "comment not found")
+
+        session.execute(
+            text("update comments set status = 'deleted' where id = :cid"),
+            {"cid": comment_id},
+        )
+        session.commit()
+
+    return {"id": comment_id, "status": "deleted"}
+
+
+class PrivacyIn(BaseModel):
+    hide_comment_history: bool
+
+
+# Score and the caller's own vote, joined onto any comment query. Kept as one
+# string so the story thread and a user's history cannot drift into scoring
+# comments differently.
+_VOTE_JOIN = """
+    left join (
+        select comment_id,
+               coalesce(sum(value), 0) as score,
+               count(*) filter (where value = 1)  as ups,
+               count(*) filter (where value = -1) as downs
+        from comment_votes group by comment_id
+    ) v on v.comment_id = c.id
+    left join comment_votes mine
+           on mine.comment_id = c.id and mine.user_id = :viewer
+"""
+
+
+@app.put("/api/comments/{comment_id}/vote")
+def api_vote(
+    comment_id: str, payload: VoteIn, user: Annotated[dict, Depends(current_user)]
+) -> dict:
+    """Cast or change a vote. Sending the vote you already hold clears it,
+    which is how every arrow-based UI behaves."""
+    _valid_uuid(comment_id)
+    if payload.value not in (1, -1):
+        raise HTTPException(422, "value must be 1 or -1")
+
+    with Session() as session:
+        if (
+            session.execute(
+                text("select 1 from comments where id = :cid and status = 'visible'"),
+                {"cid": comment_id},
+            ).first()
+            is None
+        ):
+            raise HTTPException(404, "comment not found")
+
+        current = session.execute(
+            text("""
+                select value from comment_votes
+                where comment_id = :cid and user_id = :uid
+            """),
+            {"cid": comment_id, "uid": user["sub"]},
+        ).scalar()
+
+        if current == payload.value:
+            session.execute(
+                text("""
+                    delete from comment_votes
+                    where comment_id = :cid and user_id = :uid
+                """),
+                {"cid": comment_id, "uid": user["sub"]},
+            )
+            my_vote = 0
+        else:
+            # Upsert on the composite key: one vote per person per comment
+            # is the primary key, so a change can never create a second row.
+            session.execute(
+                text("""
+                    insert into comment_votes (comment_id, user_id, value)
+                    values (:cid, :uid, :val)
+                    on conflict (comment_id, user_id)
+                        do update set value = excluded.value
+                """),
+                {"cid": comment_id, "uid": user["sub"], "val": payload.value},
+            )
+            my_vote = payload.value
+
+        score = session.execute(
+            text(
+                "select coalesce(sum(value), 0) from comment_votes where comment_id = :cid"
+            ),
+            {"cid": comment_id},
+        ).scalar()
+        session.commit()
+
+    return {"comment_id": comment_id, "score": score, "my_vote": my_vote}
+
+
+@app.get("/api/stories/{story_id}/comments")
+def api_comments(
+    story_id: str,
+    viewer: Annotated[dict | None, Depends(optional_user)],
+    limit: int = COMMENT_PAGE_SIZE,
+) -> list[dict]:
+    """Public comments on a story, highest scoring first.
+
+    Optional auth: signed out still reads the thread, signed in additionally
+    learns which comments they have voted on so the arrows render filled.
+
     Only 'visible' rows are returned -- pending, hidden, and removed are all
     invisible to readers, and the distinction matters only to moderation.
     """
     _valid_uuid(story_id)
+    viewer_id = viewer["sub"] if viewer else None
+
     with Session() as session:
         rows = session.execute(
-            text("""
-                select id, user_id, body, created_at, edited_at
-                from comments
-                where story_id = :sid
-                  and visibility = 'public'
-                  and status = 'visible'
-                order by created_at
+            text(f"""
+                select c.id, c.user_id, p.username, c.body,
+                       c.created_at, c.edited_at, c.parent_id, c.depth,
+                       c.status,
+                       coalesce(v.score, 0) as score,
+                       coalesce(mine.value, 0) as my_vote
+                from comments c
+                -- LEFT: most users never choose a name, so username comes
+                -- back null and the derived handle takes over. Joining at
+                -- read time is what makes a rename show up on every old
+                -- comment at once instead of needing a rewrite.
+                left join profiles p on p.user_id = c.user_id
+                {_VOTE_JOIN}
+                where c.story_id = :sid
+                  and c.visibility = 'public'
+                  and (
+                    c.status = 'visible'
+                    -- A withdrawn or removed comment stays ONLY while it has
+                    -- replies, as a tombstone. Dropping it would orphan the
+                    -- answers beneath it; keeping childless ones would
+                    -- litter the thread with scars nobody can read.
+                    or (c.status in ('deleted', 'removed')
+                        and exists (select 1 from comments child
+                                    where child.parent_id = c.id))
+                  )
+                -- created_at breaks ties so ordering is stable across
+                -- reloads; without it equal-scoring comments shuffle.
+                order by coalesce(v.score, 0) desc, c.created_at
                 limit :limit
             """),
-            {"sid": story_id, "limit": min(limit, COMMENT_PAGE_SIZE)},
+            {
+                "sid": story_id,
+                "viewer": viewer_id,
+                "limit": min(limit, COMMENT_PAGE_SIZE),
+            },
         ).all()
 
-    return [
-        {
-            "id": str(r.id),
-            # The author's uuid, not their email: an email address is
-            # personal data and does not belong in a public payload.
-            "user_id": str(r.user_id),
-            "body": r.body,
-            "created_at": r.created_at.isoformat(),
-            "edited_at": r.edited_at.isoformat() if r.edited_at else None,
-        }
-        for r in rows
-    ]
+    return [_comment_payload(r) for r in rows]
+
+
+def _comment_payload(r) -> dict:
+    """One comment as the API returns it, wherever it is being listed."""
+    status = getattr(r, "status", "visible")
+    gone = status in ("deleted", "removed")
+    return {
+        "id": str(r.id),
+        "parent_id": str(r.parent_id) if getattr(r, "parent_id", None) else None,
+        "depth": getattr(r, "depth", 0),
+        "status": status,
+        # The author's uuid, not their email: an email address is personal
+        # data and does not belong in a public payload. The frontend needs
+        # it only to mark a comment as its own.
+        "user_id": str(r.user_id),
+        # Resolved server-side so every surface agrees on what to call
+        # someone, rather than each component reimplementing the fallback.
+        # A tombstone has no author and no text. The row keeps both for
+        # moderation history; the API simply stops serving them.
+        "author": None if gone else (r.username or derive_handle(str(r.user_id))),
+        "body": None if gone else r.body,
+        "created_at": r.created_at.isoformat(),
+        "edited_at": r.edited_at.isoformat() if r.edited_at else None,
+        "score": r.score,
+        "my_vote": r.my_vote,
+    }
 
 
 @app.post("/api/stories/{story_id}/comments", status_code=201)
@@ -465,6 +927,27 @@ def api_comment_create(
         ):
             raise HTTPException(404, "story not found")
 
+        # A reply inherits its parent's depth plus one. Reading the parent
+        # also confirms it belongs to THIS story -- otherwise a crafted
+        # parent_id could graft a reply onto a thread it was never part of.
+        depth = 0
+        parent_id = payload.parent_id
+        if parent_id is not None:
+            _valid_uuid(parent_id)
+            parent = session.execute(
+                text("""
+                    select depth, story_id from comments
+                    where id = :pid
+                      and status in ('visible', 'deleted', 'removed')
+                """),
+                {"pid": parent_id},
+            ).one_or_none()
+            if parent is None or str(parent.story_id) != story_id:
+                raise HTTPException(404, "parent comment not found")
+            depth = parent.depth + 1
+            if depth > COMMENT_MAX_DEPTH:
+                raise HTTPException(422, "this thread is too deep to reply to")
+
         # 2. Indexed count, still free.
         _check_rate_limits(session, user["sub"], story_id)
 
@@ -491,29 +974,45 @@ def api_comment_create(
 
         row = session.execute(
             text("""
-                insert into comments (id, user_id, story_id, body, status)
-                values (gen_random_uuid(), :uid, :sid, :body, :status)
+                insert into comments
+                    (id, user_id, story_id, parent_id, depth, body, status)
+                values
+                    (gen_random_uuid(), :uid, :sid, :pid, :depth, :body, :status)
                 returning id, created_at
             """),
             {
                 "uid": user["sub"],
                 "sid": story_id,
+                "pid": parent_id,
+                "depth": depth,
                 "body": body,
                 "status": verdict.status,
             },
         ).one()
+
+        # Resolved the same way the read path does it, so a freshly posted
+        # comment shows the same name as it will after a reload.
+        chosen = session.execute(
+            text("select username from profiles where user_id = :uid"),
+            {"uid": user["sub"]},
+        ).scalar()
         session.commit()
 
     return {
         "id": str(row.id),
+        "parent_id": parent_id,
+        "depth": depth,
+        "status": verdict.status,
         "user_id": user["sub"],
+        "author": chosen or derive_handle(user["sub"]),
         "body": body,
         "created_at": row.created_at.isoformat(),
         "edited_at": None,
-        # The author is told what happened to their own comment. Silently
-        # storing a removed comment and rendering nothing is what makes
-        # moderation feel like a bug.
-        "status": verdict.status,
+        # A brand new comment has no votes yet, but the shape must match the
+        # read path or the component renders it differently from its
+        # neighbours.
+        "score": 0,
+        "my_vote": 0,
     }
 
 
@@ -609,6 +1108,8 @@ if _DIST.is_dir():
         "/app/login",
         "/app/signup",
         "/app/favorites",
+        "/app/settings",
+        "/app/u/{handle}",
     ]
 
     def _serve_index() -> str:

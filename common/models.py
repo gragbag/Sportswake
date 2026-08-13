@@ -11,15 +11,18 @@ from typing import Any
 
 from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
     create_engine,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -218,6 +221,51 @@ class Favorite(Base):
     )
 
 
+class Profile(Base):
+    """A user who has chosen a username.
+
+    Deliberately NOT a row per account. Everyone gets a stable handle derived
+    from their user id, so this table holds only the people who picked
+    something else -- which means no backfill, no row to create at signup,
+    and nothing reserved during email verification.
+
+    Comments store user_id and join here at read time, so a rename shows up
+    everywhere at once rather than needing every old row rewritten.
+    """
+
+    __tablename__ = "profiles"
+
+    # The Supabase auth.users id (JWT `sub`). No FK -- auth.users is
+    # Supabase's own schema and does not exist in the local database.
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    # Null means "still using the derived handle".
+    username: Mapped[str | None] = mapped_column(String(20))
+    # Drives the rename cooldown. Renaming frees the old handle for anyone
+    # else, so rapid renames are an identity-swap tool; the cooldown makes
+    # that impractical without forbidding renames outright.
+    username_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    # Opt-out, not opt-in: comments are already public on the story page, so
+    # hiding the aggregated view is a privacy preference rather than a
+    # default. Hiding does not unpublish anything.
+    hide_comment_history: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+    # Declared here as well as in the migration, or `alembic check` sees an
+    # index the models do not know about and proposes dropping it -- the
+    # same drift that bit the stories indexes.
+    __table_args__ = (
+        Index(
+            "ix_profiles_username_lower",
+            text("lower(username)"),
+            unique=True,
+        ),
+    )
+
+
 class Comment(Base):
     """A user's writing about a story.
 
@@ -236,15 +284,22 @@ class Comment(Base):
     )
     user_id: Mapped[str] = mapped_column(UUID(as_uuid=False))
     story_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("stories.id"))
+    # Null for a top-level comment. Never changes after insert, which is why
+    # depth below can be stored rather than walked.
+    parent_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("comments.id")
+    )
+    depth: Mapped[int] = mapped_column(SmallInteger, default=0)
     body: Mapped[str] = mapped_column(Text)
 
     # 'public' | 'private'. Private rows are the milestone-6 note.
     visibility: Mapped[str] = mapped_column(String(16), default="public")
-    # 'visible' | 'pending' | 'hidden' | 'removed'. Four states, not a
-    # boolean, so an exhausted moderation quota can hold a comment for review
-    # instead of forcing a choice between publishing it unchecked and
-    # dropping it. Removal is always a status change -- rows are never
-    # deleted, because appeals and repeat-offender detection both need them.
+    # 'visible' | 'pending' | 'hidden' | 'removed' | 'deleted'. Not a
+    # boolean, so an exhausted moderation quota can hold a comment for
+    # review instead of forcing a choice between publishing it unchecked and
+    # dropping it -- and so author deletion ('deleted') stays distinct from
+    # moderation ('removed'). Rows are never actually deleted: appeals,
+    # repeat-offender detection and orphaned replies all need them.
     status: Mapped[str] = mapped_column(String(16), default="visible")
 
     created_at: Mapped[datetime] = mapped_column(
@@ -255,11 +310,44 @@ class Comment(Base):
     __table_args__ = (
         # Reading a thread.
         Index("ix_comments_story_created", "story_id", "created_at"),
+        Index("ix_comments_parent", "parent_id"),
         # Rate limiting: "how many has this user posted since X". Must be
         # indexed -- it runs before every insert, and an unindexed count over
         # a growing table is the slowest thing in the request path.
         Index("ix_comments_user_created", "user_id", "created_at"),
     )
+
+
+class CommentVote(Base):
+    """One person's vote on one comment.
+
+    Composite primary key rather than a surrogate id: one vote per person
+    per comment is the rule, and making it the key means the database
+    enforces it and changing your vote is an upsert rather than a
+    read-modify-write.
+
+    Stored as +1/-1 so the net score is a sum, while ups and downs stay
+    separately countable -- which is what a confidence-interval sort would
+    need if raw score ever proves too naive.
+    """
+
+    __tablename__ = "comment_votes"
+
+    comment_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("comments.id"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    # SmallInteger to match the migration -- a plain Integer here reads as
+    # drift to `alembic check`.
+    value: Mapped[int] = mapped_column(SmallInteger)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+    # Scoring a thread groups by comment_id, so that side of the key needs
+    # to lead. The PK index already does this, but naming it makes the
+    # read path explicit.
+    __table_args__ = (Index("ix_comment_votes_comment", "comment_id"),)
 
 
 class CommentReport(Base):

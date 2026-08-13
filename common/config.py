@@ -72,6 +72,39 @@ COMMENT_MAX_LENGTH: int = int(os.environ.get("COMMENT_MAX_LENGTH", "2000"))
 # Read page size. Bounds the query and the payload without ever closing a
 # thread.
 COMMENT_PAGE_SIZE: int = int(os.environ.get("COMMENT_PAGE_SIZE", "50"))
+# Nesting cap. 0 is top level, so 3 allows a reply, a counter-reply, and one
+# more. Unlimited nesting indents into a column two characters wide and
+# multiplies the moderation surface without deepening the conversation.
+COMMENT_MAX_DEPTH: int = int(os.environ.get("COMMENT_MAX_DEPTH", "3"))
+
+
+# ---- profiles -----------------------------------------------------------
+# Renaming frees the old handle for anyone else to take, which makes rapid
+# renames an identity-swap tool. A cooldown makes that impractical without
+# forbidding renames outright, the way Reddit and Mastodon do.
+USERNAME_COOLDOWN_DAYS: int = int(os.environ.get("USERNAME_COOLDOWN_DAYS", "30"))
+# Names the product needs to keep, so nobody can imply they speak for it.
+USERNAME_RESERVED: frozenset[str] = frozenset(
+    {
+        "admin",
+        "administrator",
+        "moderator",
+        "mod",
+        "staff",
+        "support",
+        "presswake",
+        "official",
+        "help",
+        "root",
+        "system",
+        "null",
+        "undefined",
+        "me",
+        "you",
+        "anonymous",
+        "deleted",
+    }
+)
 
 
 # ---- comment moderation -------------------------------------------------

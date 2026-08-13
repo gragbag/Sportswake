@@ -17,14 +17,57 @@ export type Story = {
   buckets: number[];
 };
 
+export type Profile = {
+  user_id: string;
+  email: string | null;
+  /** Null when they have never chosen one; `handle` is the derived fallback. */
+  username: string | null;
+  /** What actually renders: chosen username, or the derived handle. */
+  handle: string;
+  /** ISO timestamp, or null when no cooldown is running. */
+  can_change_at: string | null;
+  hide_comment_history: boolean;
+};
+
 export type Comment = {
   id: string;
-  /** Author's Supabase user id. Not their email -- that is personal data and
-   *  does not belong in a public payload. Display names would replace this. */
+  /** Null for a top-level comment. */
+  parent_id: string | null;
+  /** 0 at top level; the API caps how deep a reply may go. */
+  depth: number;
+  /** 'visible' | 'deleted' | 'removed'. The last two are tombstones and
+   *  arrive with author and body null. */
+  status: string;
+  /** Author's Supabase user id -- used only to mark a comment as your own. */
   user_id: string;
-  body: string;
+  /** Resolved server-side so every surface agrees. Null on a tombstone. */
+  author: string | null;
+  /** Null on a tombstone -- the row keeps its text, the API stops serving it. */
+  body: string | null;
   created_at: string;
   edited_at: string | null;
+  /** Net score: upvotes minus downvotes. */
+  score: number;
+  /** The viewer's own vote: 1, -1, or 0 when they have not voted. */
+  my_vote: number;
+};
+
+/** A comment with its replies attached, built client-side from the flat list. */
+export type CommentNodeData = Comment & { replies: CommentNodeData[] };
+
+/** A comment as listed on a user's profile, where the story is the context. */
+export type ProfileComment = Comment & {
+  story_id: string;
+  story_title: string;
+};
+
+export type PublicProfile = {
+  user_id: string;
+  handle: string;
+  joined_at: string | null;
+  is_self: boolean;
+  history_hidden: boolean;
+  comments: ProfileComment[];
 };
 
 /** One member article of a story, as returned by /api/stories/{id}. */
