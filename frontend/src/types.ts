@@ -26,6 +26,7 @@ export type Profile = {
   handle: string;
   /** ISO timestamp, or null when no cooldown is running. */
   can_change_at: string | null;
+  hide_comment_history: boolean;
 };
 
 export type Comment = {
@@ -37,6 +38,25 @@ export type Comment = {
   body: string;
   created_at: string;
   edited_at: string | null;
+  /** Net score: upvotes minus downvotes. */
+  score: number;
+  /** The viewer's own vote: 1, -1, or 0 when they have not voted. */
+  my_vote: number;
+};
+
+/** A comment as listed on a user's profile, where the story is the context. */
+export type ProfileComment = Comment & {
+  story_id: string;
+  story_title: string;
+};
+
+export type PublicProfile = {
+  user_id: string;
+  handle: string;
+  joined_at: string | null;
+  is_self: boolean;
+  history_hidden: boolean;
+  comments: ProfileComment[];
 };
 
 /** One member article of a story, as returned by /api/stories/{id}. */

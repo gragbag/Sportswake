@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, useAuth } from "../lib/auth";
 import { timeAgo } from "../lib/time";
+import { VoteButtons } from "./VoteButtons";
 import type { Comment } from "../types";
 
 const MAX_LENGTH = 2000;
@@ -17,11 +18,17 @@ export function CommentThread({ storyId }: { storyId: string }) {
 
   useEffect(() => {
     setComments(null);
-    fetch(`/api/stories/${storyId}/comments`)
+    // apiFetch, not fetch: the endpoint takes OPTIONAL auth, so a plain
+    // fetch still returns the thread -- but with my_vote 0 on every
+    // comment, because the server cannot tell who is asking. The arrows
+    // then render empty and the first click computes the wrong delta.
+    apiFetch(`/api/stories/${storyId}/comments`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(setComments)
       .catch(() => setComments([]));
-  }, [storyId]);
+    // session, not just storyId: signing in mid-page has to refetch, or the
+    // thread keeps the signed-out payload where every my_vote is 0.
+  }, [storyId, session]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -79,20 +86,35 @@ export function CommentThread({ storyId }: { storyId: string }) {
           {comments.map((c) => (
             <li
               key={c.id}
-              className="border-b border-ink-200 py-3 last:border-0 dark:border-white/10"
+              className="flex gap-3 border-b border-ink-200 py-3 last:border-0 dark:border-white/10"
             >
-              <div className="flex items-baseline gap-2 text-[11px] text-ink-500 dark:text-white/40">
-                <span className="font-medium text-ink-900/80 dark:text-white/70">
-                  {c.user_id === selfId ? "You" : c.author}
-                </span>
-                <span>{timeAgo(c.created_at)}</span>
-                {c.edited_at && <span>· edited</span>}
+              {/* key includes the server's numbers so a refetch REMOUNTS this
+                  and resets its internal state. Without it the component
+                  keeps the score it mounted with -- signing in would leave
+                  every arrow empty. */}
+              <VoteButtons
+                key={`${c.id}:${c.score}:${c.my_vote}`}
+                commentId={c.id}
+                score={c.score}
+                myVote={c.my_vote}
+              />
+              <div className="min-w-0">
+                <div className="flex items-baseline gap-2 text-[11px] text-ink-500 dark:text-white/40">
+                  <Link
+                    to={`/u/${c.author}`}
+                    className="font-medium text-ink-900/80 hover:underline dark:text-white/70"
+                  >
+                    {c.user_id === selfId ? "You" : c.author}
+                  </Link>
+                  <span>{timeAgo(c.created_at)}</span>
+                  {c.edited_at && <span>· edited</span>}
+                </div>
+                {/* whitespace-pre-wrap keeps the author's line breaks; without
+                    it every paragraph collapses into one run of text. */}
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-snug text-ink-900 dark:text-white/90">
+                  {c.body}
+                </p>
               </div>
-              {/* whitespace-pre-wrap keeps the author's line breaks; without
-                  it every paragraph collapses into one run of text. */}
-              <p className="mt-1 whitespace-pre-wrap text-sm leading-snug text-ink-900 dark:text-white/90">
-                {c.body}
-              </p>
             </li>
           ))}
         </ol>

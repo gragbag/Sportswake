@@ -4,6 +4,7 @@ import { FavoritesPage } from "./components/FavoritesPage";
 import { Feed } from "./components/Feed";
 import { SettingsPage } from "./components/SettingsPage";
 import { StoryPage } from "./components/StoryPage";
+import { UserPage } from "./components/UserPage";
 import { useAuth } from "./lib/auth";
 
 function HeaderAuth() {
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="/story/:storyId" element={<StoryPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/u/:handle" element={<UserPage />} />
           <Route path="/login" element={<AuthForm mode="login" />} />
           <Route path="/signup" element={<AuthForm mode="signup" />} />
         </Routes>

@@ -71,6 +71,23 @@ export function SettingsPage() {
     }
   }
 
+  async function setPrivacy(hide: boolean) {
+    // Optimistic, and reverted on failure -- a checkbox that silently
+    // disagrees with the server is worse than one that snaps back.
+    setProfile((p) => (p ? { ...p, hide_comment_history: hide } : p));
+    try {
+      const res = await apiFetch("/api/profile/privacy", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hide_comment_history: hide }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+    } catch {
+      setProfile((p) => (p ? { ...p, hide_comment_history: !hide } : p));
+      setError("Could not save that setting");
+    }
+  }
+
   if (authLoading) {
     return <p className="text-sm text-ink-500 dark:text-white/50">Loading&hellip;</p>;
   }
@@ -176,6 +193,37 @@ export function SettingsPage() {
           {error && <span className="text-[11px] text-red-600">{error}</span>}
         </div>
       </form>
+
+      <section className="mt-10 border-t border-ink-200 pt-6 dark:border-white/10">
+        <h2 className="text-[11px] font-medium uppercase tracking-wide text-ink-500 dark:text-white/40">
+          Privacy
+        </h2>
+
+        <label className="mt-3 flex items-start gap-2">
+          <input
+            type="checkbox"
+            checked={profile?.hide_comment_history ?? false}
+            onChange={(e) => void setPrivacy(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span className="text-sm text-ink-900 dark:text-white/90">
+            Hide my comment history
+            <span className="mt-0.5 block text-[11px] text-ink-500 dark:text-white/40">
+              Your profile stops listing your comments. They stay visible on the
+              stories where you posted them &mdash; hiding is not deleting.
+            </span>
+          </span>
+        </label>
+
+        {profile && (
+          <Link
+            to={`/u/${profile.username ?? profile.user_id}`}
+            className="mt-3 inline-block text-[11px] text-ink-500 underline dark:text-white/40"
+          >
+            View my public profile
+          </Link>
+        )}
+      </section>
     </div>
   );
 }

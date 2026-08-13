@@ -11,11 +11,13 @@ from typing import Any
 
 from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -244,6 +246,10 @@ class Profile(Base):
     username_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+    # Opt-out, not opt-in: comments are already public on the story page, so
+    # hiding the aggregated view is a privacy preference rather than a
+    # default. Hiding does not unpublish anything.
+    hide_comment_history: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
     )
@@ -302,6 +308,38 @@ class Comment(Base):
         # a growing table is the slowest thing in the request path.
         Index("ix_comments_user_created", "user_id", "created_at"),
     )
+
+
+class CommentVote(Base):
+    """One person's vote on one comment.
+
+    Composite primary key rather than a surrogate id: one vote per person
+    per comment is the rule, and making it the key means the database
+    enforces it and changing your vote is an upsert rather than a
+    read-modify-write.
+
+    Stored as +1/-1 so the net score is a sum, while ups and downs stay
+    separately countable -- which is what a confidence-interval sort would
+    need if raw score ever proves too naive.
+    """
+
+    __tablename__ = "comment_votes"
+
+    comment_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("comments.id"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    # SmallInteger to match the migration -- a plain Integer here reads as
+    # drift to `alembic check`.
+    value: Mapped[int] = mapped_column(SmallInteger)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+    # Scoring a thread groups by comment_id, so that side of the key needs
+    # to lead. The PK index already does this, but naming it makes the
+    # read path explicit.
+    __table_args__ = (Index("ix_comment_votes_comment", "comment_id"),)
 
 
 class CommentReport(Base):
