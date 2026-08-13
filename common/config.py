@@ -74,6 +74,35 @@ COMMENT_MAX_LENGTH: int = int(os.environ.get("COMMENT_MAX_LENGTH", "2000"))
 COMMENT_PAGE_SIZE: int = int(os.environ.get("COMMENT_PAGE_SIZE", "50"))
 
 
+# ---- profiles -----------------------------------------------------------
+# Renaming frees the old handle for anyone else to take, which makes rapid
+# renames an identity-swap tool. A cooldown makes that impractical without
+# forbidding renames outright, the way Reddit and Mastodon do.
+USERNAME_COOLDOWN_DAYS: int = int(os.environ.get("USERNAME_COOLDOWN_DAYS", "30"))
+# Names the product needs to keep, so nobody can imply they speak for it.
+USERNAME_RESERVED: frozenset[str] = frozenset(
+    {
+        "admin",
+        "administrator",
+        "moderator",
+        "mod",
+        "staff",
+        "support",
+        "presswake",
+        "official",
+        "help",
+        "root",
+        "system",
+        "null",
+        "undefined",
+        "me",
+        "you",
+        "anonymous",
+        "deleted",
+    }
+)
+
+
 # ---- comment moderation -------------------------------------------------
 OPENAI_API_KEY: str | None = os.environ.get("OPENAI_API_KEY")
 # "openai" | "groq". Both sit behind one interface in app/moderation.py, so

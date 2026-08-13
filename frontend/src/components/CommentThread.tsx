@@ -6,18 +6,6 @@ import type { Comment } from "../types";
 
 const MAX_LENGTH = 2000;
 
-/**
- * Placeholder identity.
- *
- * The API returns the author's uuid rather than their email, so there is
- * nothing human-readable to show yet. A short hash is honest about that;
- * display names are the real fix and the first thing that actually needs a
- * profile table.
- */
-function authorLabel(userId: string, selfId: string | undefined): string {
-  return userId === selfId ? "You" : `user-${userId.slice(0, 6)}`;
-}
-
 export function CommentThread({ storyId }: { storyId: string }) {
   const { session } = useAuth();
   const selfId = session?.user.id;
@@ -95,7 +83,7 @@ export function CommentThread({ storyId }: { storyId: string }) {
             >
               <div className="flex items-baseline gap-2 text-[11px] text-ink-500 dark:text-white/40">
                 <span className="font-medium text-ink-900/80 dark:text-white/70">
-                  {authorLabel(c.user_id, selfId)}
+                  {c.user_id === selfId ? "You" : c.author}
                 </span>
                 <span>{timeAgo(c.created_at)}</span>
                 {c.edited_at && <span>· edited</span>}

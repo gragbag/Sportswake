@@ -17,11 +17,23 @@ export type Story = {
   buckets: number[];
 };
 
+export type Profile = {
+  user_id: string;
+  email: string | null;
+  /** Null when they have never chosen one; `handle` is the derived fallback. */
+  username: string | null;
+  /** What actually renders: chosen username, or the derived handle. */
+  handle: string;
+  /** ISO timestamp, or null when no cooldown is running. */
+  can_change_at: string | null;
+};
+
 export type Comment = {
   id: string;
-  /** Author's Supabase user id. Not their email -- that is personal data and
-   *  does not belong in a public payload. Display names would replace this. */
+  /** Author's Supabase user id -- used only to mark a comment as your own. */
   user_id: string;
+  /** Display name, resolved server-side so every surface agrees. */
+  author: string;
   body: string;
   created_at: string;
   edited_at: string | null;

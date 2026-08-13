@@ -20,6 +20,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -215,6 +216,47 @@ class Favorite(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "story_id", name="uq_favorites_user_story"),
         Index("ix_favorites_user_saved", "user_id", "saved_at"),
+    )
+
+
+class Profile(Base):
+    """A user who has chosen a username.
+
+    Deliberately NOT a row per account. Everyone gets a stable handle derived
+    from their user id, so this table holds only the people who picked
+    something else -- which means no backfill, no row to create at signup,
+    and nothing reserved during email verification.
+
+    Comments store user_id and join here at read time, so a rename shows up
+    everywhere at once rather than needing every old row rewritten.
+    """
+
+    __tablename__ = "profiles"
+
+    # The Supabase auth.users id (JWT `sub`). No FK -- auth.users is
+    # Supabase's own schema and does not exist in the local database.
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    # Null means "still using the derived handle".
+    username: Mapped[str | None] = mapped_column(String(20))
+    # Drives the rename cooldown. Renaming frees the old handle for anyone
+    # else, so rapid renames are an identity-swap tool; the cooldown makes
+    # that impractical without forbidding renames outright.
+    username_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+    # Declared here as well as in the migration, or `alembic check` sees an
+    # index the models do not know about and proposes dropping it -- the
+    # same drift that bit the stories indexes.
+    __table_args__ = (
+        Index(
+            "ix_profiles_username_lower",
+            text("lower(username)"),
+            unique=True,
+        ),
     )
 
 

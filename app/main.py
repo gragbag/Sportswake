@@ -8,8 +8,10 @@ and the number went up.
 from __future__ import annotations
 
 import html
+import re
 import sys
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -18,10 +20,12 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import bindparam, func, select, text
+from sqlalchemy.exc import IntegrityError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.auth import current_user
+from app.handles import derive_handle
 from app.moderation import classify
 from common.config import (
     COMMENT_MAX_LENGTH,
@@ -29,6 +33,8 @@ from common.config import (
     COMMENT_MAX_PER_HOUR,
     COMMENT_MAX_PER_STORY,
     COMMENT_PAGE_SIZE,
+    USERNAME_COOLDOWN_DAYS,
+    USERNAME_RESERVED,
 )
 from common.models import (
     Article,
@@ -37,6 +43,7 @@ from common.models import (
     Story,
     make_engine,
     make_session_factory,
+    utcnow,
 )
 
 # serverless=True -> no client-side pooling. Use the transaction-mode pooler
@@ -269,6 +276,132 @@ def api_me(user: Annotated[dict, Depends(current_user)]) -> dict:
     }
 
 
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,20}$")
+
+
+class UsernameIn(BaseModel):
+    username: str
+
+
+def _validate_username(raw: str) -> str:
+    """Return the cleaned username or raise 422. Format rules only."""
+    name = raw.strip()
+    if not _USERNAME_RE.match(name):
+        raise HTTPException(
+            422, "3-20 characters, letters, numbers and underscore only"
+        )
+    if name.lower() in USERNAME_RESERVED:
+        raise HTTPException(422, "that name is reserved")
+    return name
+
+
+@app.get("/api/profile")
+def api_profile(user: Annotated[dict, Depends(current_user)]) -> dict:
+    """The signed-in user's own profile.
+
+    `handle` is what actually renders: the chosen username when there is
+    one, the derived handle otherwise. `username` stays null so the settings
+    form can tell "I picked this" from "this was assigned to me".
+    """
+    with Session() as session:
+        row = session.execute(
+            text("""
+                select username, username_changed_at
+                from profiles where user_id = :uid
+            """),
+            {"uid": user["sub"]},
+        ).one_or_none()
+
+    username = row.username if row else None
+    changed_at = row.username_changed_at if row else None
+
+    # Surfaced so the UI can disable the form and say when, rather than
+    # letting someone type a name and only then be told no.
+    next_change = None
+    if changed_at:
+        next_change = changed_at + timedelta(days=USERNAME_COOLDOWN_DAYS)
+
+    return {
+        "user_id": user["sub"],
+        "email": user.get("email"),
+        "username": username,
+        "handle": username or derive_handle(user["sub"]),
+        "can_change_at": next_change.isoformat() if next_change else None,
+    }
+
+
+@app.get("/api/username-available")
+def api_username_available(username: str) -> dict:
+    """Advisory check for the rename form.
+
+    Public because it is only usable by someone already choosing a name, and
+    a username is public by nature -- it appears on every comment. Email
+    existence is the thing worth hiding, and this endpoint never touches it.
+    """
+    try:
+        name = _validate_username(username)
+    except HTTPException as exc:
+        return {"available": False, "reason": exc.detail}
+
+    with Session() as session:
+        taken = session.execute(
+            text("select 1 from profiles where lower(username) = lower(:n)"),
+            {"n": name},
+        ).first()
+
+    return {"available": taken is None, "reason": None if taken is None else "taken"}
+
+
+@app.patch("/api/profile")
+def api_profile_update(
+    payload: UsernameIn, user: Annotated[dict, Depends(current_user)]
+) -> dict:
+    """Choose or change a username."""
+    name = _validate_username(payload.username)
+
+    with Session() as session:
+        existing = session.execute(
+            text("""
+                select username, username_changed_at
+                from profiles where user_id = :uid
+            """),
+            {"uid": user["sub"]},
+        ).one_or_none()
+
+        # No-op rather than burning the cooldown on a form resubmit.
+        if existing and existing.username == name:
+            return {"username": name, "handle": name}
+
+        if existing and existing.username_changed_at:
+            ready = existing.username_changed_at + timedelta(
+                days=USERNAME_COOLDOWN_DAYS
+            )
+            if utcnow() < ready:
+                raise HTTPException(
+                    429, f"you can change your username again after {ready:%b %d, %Y}"
+                )
+
+        # The unique index is the real arbiter -- the availability check
+        # above it is advisory and can lose a race.
+        try:
+            session.execute(
+                text("""
+                    insert into profiles (user_id, username, username_changed_at)
+                    values (:uid, :name, now())
+                    on conflict (user_id) do update
+                        set username = excluded.username,
+                            username_changed_at = now()
+                """),
+                {"uid": user["sub"], "name": name},
+            )
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            raise HTTPException(409, "that username is taken") from None
+
+    return {"username": name, "handle": name}
+
+
 def _valid_uuid(value: str) -> str:
     """404 rather than 500 on a malformed id.
 
@@ -415,12 +548,18 @@ def api_comments(story_id: str, limit: int = COMMENT_PAGE_SIZE) -> list[dict]:
     with Session() as session:
         rows = session.execute(
             text("""
-                select id, user_id, body, created_at, edited_at
-                from comments
-                where story_id = :sid
-                  and visibility = 'public'
-                  and status = 'visible'
-                order by created_at
+                select c.id, c.user_id, p.username, c.body,
+                       c.created_at, c.edited_at
+                from comments c
+                -- LEFT: most users never choose a name, so username comes
+                -- back null and the derived handle takes over. Joining at
+                -- read time is what makes a rename show up on every old
+                -- comment at once instead of needing a rewrite.
+                left join profiles p on p.user_id = c.user_id
+                where c.story_id = :sid
+                  and c.visibility = 'public'
+                  and c.status = 'visible'
+                order by c.created_at
                 limit :limit
             """),
             {"sid": story_id, "limit": min(limit, COMMENT_PAGE_SIZE)},
@@ -430,8 +569,13 @@ def api_comments(story_id: str, limit: int = COMMENT_PAGE_SIZE) -> list[dict]:
         {
             "id": str(r.id),
             # The author's uuid, not their email: an email address is
-            # personal data and does not belong in a public payload.
+            # personal data and does not belong in a public payload. The
+            # frontend needs it only to mark a comment as its own.
             "user_id": str(r.user_id),
+            # Resolved server-side so every surface agrees on what to call
+            # someone, rather than each component reimplementing the
+            # fallback.
+            "author": r.username or derive_handle(str(r.user_id)),
             "body": r.body,
             "created_at": r.created_at.isoformat(),
             "edited_at": r.edited_at.isoformat() if r.edited_at else None,
@@ -502,11 +646,19 @@ def api_comment_create(
                 "status": verdict.status,
             },
         ).one()
+
+        # Resolved the same way the read path does it, so a freshly posted
+        # comment shows the same name as it will after a reload.
+        chosen = session.execute(
+            text("select username from profiles where user_id = :uid"),
+            {"uid": user["sub"]},
+        ).scalar()
         session.commit()
 
     return {
         "id": str(row.id),
         "user_id": user["sub"],
+        "author": chosen or derive_handle(user["sub"]),
         "body": body,
         "created_at": row.created_at.isoformat(),
         "edited_at": None,
@@ -609,6 +761,7 @@ if _DIST.is_dir():
         "/app/login",
         "/app/signup",
         "/app/favorites",
+        "/app/settings",
     ]
 
     def _serve_index() -> str:

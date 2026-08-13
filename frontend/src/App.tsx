@@ -2,6 +2,7 @@ import { Link, Route, Routes } from "react-router-dom";
 import { AuthForm } from "./components/AuthForm";
 import { FavoritesPage } from "./components/FavoritesPage";
 import { Feed } from "./components/Feed";
+import { SettingsPage } from "./components/SettingsPage";
 import { StoryPage } from "./components/StoryPage";
 import { useAuth } from "./lib/auth";
 
@@ -36,7 +37,12 @@ function HeaderAuth() {
       >
         Saved
       </Link>
-      <span className="text-ink-500 dark:text-white/50">{email}</span>
+      <Link
+        to="/settings"
+        className="text-ink-500 hover:text-ink-900 dark:text-white/50 dark:hover:text-white"
+      >
+        {email}
+      </Link>
       <button
         onClick={signOut}
         className="text-ink-500 underline hover:text-ink-900 dark:text-white/50 dark:hover:text-white"
@@ -75,6 +81,7 @@ export default function App() {
           <Route path="/" element={<Feed />} />
           <Route path="/story/:storyId" element={<StoryPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/login" element={<AuthForm mode="login" />} />
           <Route path="/signup" element={<AuthForm mode="signup" />} />
         </Routes>
