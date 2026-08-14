@@ -163,6 +163,35 @@ def api_stats() -> dict:
         }
 
 
+@app.get("/api/categories")
+def api_categories() -> list[dict]:
+    """The tab bar, with a count of stories in each.
+
+    Counts come from the same visibility rule as the feed (2+ outlets), so a
+    tab never advertises stories it will not show. They will not sum to the
+    story total -- a story can hold two categories.
+    """
+    with Session() as session:
+        rows = session.execute(
+            text("""
+                select c.slug, c.label, count(distinct sc.story_id) as n
+                from categories c
+                left join story_categories sc on sc.category_slug = c.slug
+                left join (
+                    select sm.story_id
+                    from story_members sm
+                    join articles a on a.id = sm.article_id
+                    group by sm.story_id
+                    having count(distinct a.outlet_id) >= 2
+                ) eligible on eligible.story_id = sc.story_id
+                                and eligible.story_id is not null
+                group by c.slug, c.label, c.sort_order
+                order by c.sort_order
+            """)
+        ).all()
+    return [{"slug": r.slug, "label": r.label, "count": r.n} for r in rows]
+
+
 SPARK_BUCKETS = 10
 
 # The select list every card needs. Shared so the feed and the favorites list
@@ -198,6 +227,24 @@ def _attach_members(session, rows) -> list[dict]:
         {"ids": [r.id for r in rows]},
     ).all()
 
+    # One query for every story's categories, not one per card. Ordered by
+    # rank so element 0 is the primary label.
+    cats = session.execute(
+        text("""
+            select sc.story_id, sc.category_slug, c.label
+            from story_categories sc
+            join categories c on c.slug = sc.category_slug
+            where sc.story_id in :ids
+            order by sc.rank
+        """).bindparams(bindparam("ids", expanding=True)),
+        {"ids": [r.id for r in rows]},
+    ).all()
+    cats_by_story: dict[str, list[dict]] = {}
+    for story_id, slug, label in cats:
+        cats_by_story.setdefault(str(story_id), []).append(
+            {"slug": slug, "label": label}
+        )
+
     by_story: dict[str, list] = {}
     for story_id, outlet, when in members:
         by_story.setdefault(str(story_id), []).append((outlet, when))
@@ -231,33 +278,47 @@ def _attach_members(session, rows) -> list[dict]:
                 "span_hours": round(span / 3600, 1),
                 "outlets": seen,
                 "buckets": buckets,
+                "categories": cats_by_story.get(str(row.id), []),
             }
         )
     return out
 
 
 @app.get("/api/stories")
-def api_stories(limit: int = 24) -> list[dict]:
+def api_stories(limit: int = 24, category: str | None = None) -> list[dict]:
     """Stories worth rendering, most-covered first.
 
     Singletons are excluded here, not from the corpus -- they are what supports
     "only one outlet covered this", so they stay in the database and stay out
     of the feed.
+
+    `category` filters to one tab. It joins story_categories directly rather
+    than going via the categories table, which is why the slug is that
+    table's primary key.
     """
     with Session() as session:
+        filter_sql = ""
+        if category:
+            filter_sql = """
+                and exists (
+                    select 1 from story_categories sc
+                    where sc.story_id = s.id and sc.category_slug = :category
+                )
+            """
         rows = session.execute(
             text(f"""
                 select {_CARD_COLUMNS}
                 from stories s
                 join story_members sm on sm.story_id = s.id
                 join articles a on a.id = sm.article_id
+                where true {filter_sql}
                 group by s.id
                 having count(distinct a.outlet_id) >= 2
                 order by count(distinct a.outlet_id) desc, max(
                     coalesce(a.published_at, a.first_seen_at)) desc
                 limit :limit
             """),
-            {"limit": limit},
+            {"limit": limit, "category": category} if category else {"limit": limit},
         ).all()
         return _attach_members(session, rows)
 
@@ -1065,6 +1126,19 @@ def api_story(story_id: str) -> dict:
             {"sid": story_id},
         ).all()
 
+        # Same shape and ordering as the feed's, so the card and the page can
+        # share one badge component: rank 0 first, empty list when untagged.
+        categories = session.execute(
+            text("""
+                select sc.category_slug as slug, c.label
+                from story_categories sc
+                join categories c on c.slug = sc.category_slug
+                where sc.story_id = :sid
+                order by sc.rank
+            """),
+            {"sid": story_id},
+        ).all()
+
     span = (row.last_at - row.first_at).total_seconds()
     return {
         "id": str(row.id),
@@ -1081,6 +1155,7 @@ def api_story(story_id: str) -> dict:
         "first_at": row.first_at.isoformat(),
         "last_at": row.last_at.isoformat(),
         "span_hours": round(span / 3600, 1),
+        "categories": [{"slug": c.slug, "label": c.label} for c in categories],
         "articles": [
             {
                 "outlet": a.outlet,
@@ -1110,6 +1185,7 @@ if _DIST.is_dir():
         "/app/favorites",
         "/app/settings",
         "/app/u/{handle}",
+        "/app/c/{category}",
     ]
 
     def _serve_index() -> str:

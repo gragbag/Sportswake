@@ -68,6 +68,18 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python -m worker.summarize
 
+      # Runs after clustering, since a story has to exist before it can be
+      # tagged, but independently of summarize: the summary floor is 5
+      # outlets while the feed shows 2, so most stories are categorised
+      # without ever being summarised. Uses the small Groq model, whose
+      # rate limit is a separate pool, so a large backlog here cannot
+      # starve summarization.
+      - name: Categorize stories
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python -m worker.categorize
+
       # Retries comments the classifier could not reach when they were
       # posted. Without this, a provider outage leaves them invisible
       # forever -- which is the failure that makes moderation read as a bug.

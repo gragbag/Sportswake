@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { CategoryPills } from "./CategoryPills";
 import { CommentThread } from "./CommentThread";
 import { FavoriteButton } from "./FavoriteButton";
 import type { StoryArticle, StoryDetail } from "../types";
@@ -102,6 +103,10 @@ export function StoryPage() {
             {story.outlet_count} outlets &middot; {story.article_count} articles
             &middot; {story.span_hours}h span &middot; {groups[0]?.outlet} first
           </p>
+
+          {/* Above the headline, matching the card, so a story looks the same
+              whether you meet it in the feed or here. */}
+          <CategoryPills categories={story.categories} className="mt-3" />
 
           <div className="mt-2 flex items-start gap-3">
             <h1 className="text-2xl font-semibold leading-tight text-ink-900 dark:text-white">

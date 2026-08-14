@@ -1,3 +1,8 @@
+export type Category = { slug: string; label: string };
+
+/** A tab: a category plus how many feed-eligible stories it holds. */
+export type CategoryTab = Category & { count: number };
+
 export type Story = {
   id: string;
   /** Seed-article headline. Fallback when no summary has been generated. */
@@ -15,6 +20,8 @@ export type Story = {
   outlets: string[];
   /** Article counts bucketed across the story's lifespan, for the sparkline. */
   buckets: number[];
+  /** Ordered by rank -- element 0 is the primary label. Empty is normal. */
+  categories: Category[];
 };
 
 export type Profile = {
@@ -96,6 +103,8 @@ export type StoryDetail = {
   first_at: string;
   last_at: string;
   span_hours: number;
+  /** Rank-ordered, same shape as Story.categories. Empty is normal. */
+  categories: Category[];
   /** Chronological, oldest first. */
   articles: StoryArticle[];
 };

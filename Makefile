@@ -3,7 +3,8 @@
 # character on the line -- text after it detaches the continuation.
 .PHONY: check lint types migrations imports fmt db-up db-migrate db-refresh \
         embed cluster report recluster ingest branch eval \
-        api web web-build summarize summarize-dry moderate
+        api web web-build summarize summarize-dry moderate \
+        categorize categorize-dry evict
 
 VENV     := .venv/bin
 LOCAL_DB := postgresql://postgres:postgres@localhost:5432/presswake
@@ -29,7 +30,7 @@ lint:
 	$(VENV)/ruff check .
 
 imports:
-	$(VENV)/python -c "import common.models, worker.ingest, worker.summarize, worker.moderate, app.main"
+	$(VENV)/python -c "import common.models, worker.ingest, worker.summarize, worker.moderate, worker.categorize, app.main"
 
 types:
 	$(VENV)/mypy common worker app
@@ -92,6 +93,19 @@ summarize-dry:
 
 summarize:
 	$(DB) $(VENV)/python -m worker.summarize
+
+# Assign categories. Dry first: prints what it WOULD tag, writes nothing.
+categorize-dry:
+	$(DB) $(VENV)/python -m worker.categorize --dry-run --limit 15
+
+categorize:
+	$(DB) $(VENV)/python -m worker.categorize
+
+# Drop cluster members that are temporally isolated from their story --
+# cleanup for stories built before the MAX_MEMBER_GAP_DAYS ceiling existed.
+# Dry by default, unlike the workers above: this one DELETEs. Add APPLY=1.
+evict:
+	$(DB) $(VENV)/python scripts/evict_outliers.py $(if $(APPLY),--apply,)
 
 # Resolve comments that could not be classified when they were posted.
 moderate:
