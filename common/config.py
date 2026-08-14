@@ -20,6 +20,18 @@ CANDIDATE_WINDOW_HOURS: int = int(os.environ.get("CANDIDATE_WINDOW_HOURS", "72")
 EMBED_BATCH_SIZE: int = int(os.environ.get("EMBED_BATCH_SIZE", "64"))
 TIME_DECAY_SIGMA_HOURS: int = int(os.environ.get("TIME_DECAY_SIGMA_HOURS", "72"))
 MERGE_THRESHOLD: float = float(os.environ.get("MERGE_THRESHOLD", "0.75"))
+# Hard ceiling on how far an article may reach across a story's edge. The time
+# decay in cluster.py only RANKS candidates -- it cannot veto one -- so without
+# a ceiling a 2024 evergreen explainer, re-served into an RSS feed on a 2026
+# news cycle, joins a live story on cosine alone and becomes its first_at.
+#
+# 30, not 4: measured over 9,722 clustered articles, legitimate slow-burn
+# coverage reaches a 15d gap (two outlets on the same Spanish village, 16 days
+# apart), while the real offenders start at 40d. 30 sits in the empty band
+# between them. Erring high is deliberate -- a bad member dents a big story's
+# timeline, but rejecting a good one drops a 2-outlet story below the feed's
+# outlet floor and off the site entirely.
+MAX_MEMBER_GAP_DAYS: int = int(os.environ.get("MAX_MEMBER_GAP_DAYS", "30"))
 
 # ---- summaries (milestone 5) -------------------------------------------
 # No key = summarization disabled. Everything else keeps working; cards
@@ -76,6 +88,25 @@ COMMENT_PAGE_SIZE: int = int(os.environ.get("COMMENT_PAGE_SIZE", "50"))
 # more. Unlimited nesting indents into a column two characters wide and
 # multiplies the moderation surface without deepening the conversation.
 COMMENT_MAX_DEPTH: int = int(os.environ.get("COMMENT_MAX_DEPTH", "3"))
+
+
+# ---- categories ---------------------------------------------------------
+# The small model, deliberately: this is classification, not synthesis, and
+# Groq's limits are PER MODEL. 8b-instant has its own 14,400 req/day pool,
+# so categorising the whole backlog cannot starve summarization on
+# gpt-oss-120b.
+CATEGORY_MODEL: str = os.environ.get("CATEGORY_MODEL", "llama-3.1-8b-instant")
+# Every story the feed can show, not just summarized ones -- the summary
+# floor is 5 outlets, but the feed shows 2, so tying categories to summaries
+# would leave most of the feed untagged.
+CATEGORY_MIN_OUTLETS: int = int(os.environ.get("CATEGORY_MIN_OUTLETS", "2"))
+CATEGORY_BATCH_LIMIT: int = int(os.environ.get("CATEGORY_BATCH_LIMIT", "60"))
+# Two, because a story tagged with more than a quarter of an eight-item
+# taxonomy stops being discriminated by its tags at all.
+CATEGORY_MAX: int = int(os.environ.get("CATEGORY_MAX", "2"))
+# 8b-instant allows 30 req/min; 2s keeps a wide margin without dragging out
+# a 60-story batch.
+CATEGORY_PACE_SECONDS: float = float(os.environ.get("CATEGORY_PACE_SECONDS", "2"))
 
 
 # ---- profiles -----------------------------------------------------------

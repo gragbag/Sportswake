@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { CategoryPills } from "./CategoryPills";
 import { FavoriteButton } from "./FavoriteButton";
 import { Sparkline } from "./Sparkline";
 import { timeAgo } from "../lib/time";
@@ -44,6 +45,8 @@ export function StoryCard({ story }: { story: Story }) {
 
         <FavoriteButton storyId={story.id} />
       </div>
+
+      <CategoryPills categories={story.categories} className="-mb-1" />
 
       {/* Generated headline when we have one; the seed article's otherwise.
           The AI label is non-negotiable: generated text is always marked. */}

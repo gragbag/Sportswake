@@ -266,6 +266,51 @@ class Profile(Base):
     )
 
 
+class Category(Base):
+    """A news category. Reference data, seeded by the migration.
+
+    The slug is the primary key rather than a surrogate integer, so
+    story_categories carries a readable value and filtering a tab never has
+    to join this table at all -- most of the speed advantage of an array
+    column, without giving up the ability to add a category with an INSERT
+    instead of a migration.
+    """
+
+    __tablename__ = "categories"
+
+    slug: Mapped[str] = mapped_column(String(32), primary_key=True)
+    label: Mapped[str] = mapped_column(String(64))
+    # Tab order. Data rather than code, so reordering is an UPDATE.
+    sort_order: Mapped[int] = mapped_column(SmallInteger)
+
+
+class StoryCategory(Base):
+    """Which categories a story belongs to. At most two, enforced in code.
+
+    Composite primary key: a story cannot hold the same category twice, and
+    the database says so rather than the application remembering to.
+    """
+
+    __tablename__ = "story_categories"
+
+    story_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("stories.id"), primary_key=True
+    )
+    category_slug: Mapped[str] = mapped_column(
+        String(32), ForeignKey("categories.slug"), primary_key=True
+    )
+    # 0 is the primary category -- the one shown when there is room for one.
+    rank: Mapped[int] = mapped_column(SmallInteger, default=0)
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+    # The tab query filters on the slug and joins back to stories, so the
+    # slug has to lead. The PK index leads with story_id, which serves the
+    # opposite direction.
+    __table_args__ = (Index("ix_story_categories_slug", "category_slug", "story_id"),)
+
+
 class Comment(Base):
     """A user's writing about a story.
 

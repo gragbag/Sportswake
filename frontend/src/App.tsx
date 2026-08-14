@@ -80,6 +80,7 @@ export default function App() {
 
         <Routes>
           <Route path="/" element={<Feed />} />
+          <Route path="/c/:category" element={<Feed />} />
           <Route path="/story/:storyId" element={<StoryPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/settings" element={<SettingsPage />} />

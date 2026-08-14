@@ -31,6 +31,7 @@ from common.config import (
     ACCEPT_COSINE,
     CANDIDATE_MIN_COSINE,
     CANDIDATE_WINDOW_HOURS,
+    MAX_MEMBER_GAP_DAYS,
     TIME_DECAY_SIGMA_HOURS,
 )
 from common.models import (
@@ -155,20 +156,31 @@ def assign(session, article: Article) -> Story:
     """Join the best-scoring story, or seed a new one.
 
     ACCEPT_COSINE gates on RAW cosine. The time factor only ranks which of the
-    already-acceptable candidates wins -- it can no longer veto one.
+    already-acceptable candidates wins -- inside MAX_MEMBER_GAP_DAYS it cannot
+    veto one.
 
     Filter before ranking, not after. A weak near-in-time candidate can
     out-score a stronger distant one (cosine 0.64 at 0h scores 0.640; cosine
     0.70 at 40h scores 0.599), so testing only the winner's cosine would reject
     an article that had a perfectly good story available.
+
+    The gap ceiling is the one exception, and it has to be a hard cutoff rather
+    than a very low score: time_factor underflows to 0.0 far below the gaps it
+    is meant to stop, and best_score starts at -1.0, so a candidate scoring
+    exactly zero still wins whenever it is the only one above the cosine bar.
     """
     when = article_time(article)
+    max_gap_hours = MAX_MEMBER_GAP_DAYS * 24
 
     best_story_id, best_cosine, best_score = None, 0.0, -1.0
     for story_id, last_activity, cosine in candidate_stories(session, article, when):
         if cosine < ACCEPT_COSINE:
             continue
+        # abs(), so a feed that stamps an article in the future is bounded the
+        # same way a stale republished one is.
         gap_hours = abs((when - last_activity).total_seconds()) / 3600.0
+        if gap_hours > max_gap_hours:
+            continue
         score = cosine * time_factor(gap_hours)
         if score > best_score:
             best_story_id, best_cosine, best_score = story_id, cosine, score
