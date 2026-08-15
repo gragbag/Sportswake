@@ -19,7 +19,15 @@ ACCEPT_COSINE: float = float(os.environ.get("ACCEPT_COSINE", "0.65"))
 CANDIDATE_WINDOW_HOURS: int = int(os.environ.get("CANDIDATE_WINDOW_HOURS", "72"))
 EMBED_BATCH_SIZE: int = int(os.environ.get("EMBED_BATCH_SIZE", "64"))
 TIME_DECAY_SIGMA_HOURS: int = int(os.environ.get("TIME_DECAY_SIGMA_HOURS", "72"))
-MERGE_THRESHOLD: float = float(os.environ.get("MERGE_THRESHOLD", "0.75"))
+# 0.85, raised from 0.75 at the same time merge_pass stopped multiplying the
+# decay into this comparison. It is not a tightening: because the old test was
+# cosine * decay >= 0.75, the bar this system has actually enforced was 0.79 at
+# a 24h gap and 0.94 at 48h. Raw 0.75 was therefore looser than anything that
+# had ever run, and it showed -- at 0.75 a Michigan Senate primary paired with
+# a Milwaukee county race (0.751, 10 and 24 outlets), and a Sony headphone
+# rumour with a Sony coupons post. 0.85 sits inside the range that was already
+# in force, but as a constant instead of a function of age.
+MERGE_THRESHOLD: float = float(os.environ.get("MERGE_THRESHOLD", "0.85"))
 # Hard ceiling on how far an article may reach across a story's edge. The time
 # decay in cluster.py only RANKS candidates -- it cannot veto one -- so without
 # a ceiling a 2024 evergreen explainer, re-served into an RSS feed on a 2026
@@ -32,6 +40,15 @@ MERGE_THRESHOLD: float = float(os.environ.get("MERGE_THRESHOLD", "0.75"))
 # timeline, but rejecting a good one drops a 2-outlet story below the feed's
 # outlet floor and off the site entirely.
 MAX_MEMBER_GAP_DAYS: int = int(os.environ.get("MAX_MEMBER_GAP_DAYS", "30"))
+# The same ceiling for merge_pass, story-to-story rather than article-to-story.
+# It replaces a bound that used to be implicit in the time decay and was far
+# tighter than anyone intended: requiring cosine * decay >= MERGE_THRESHOLD
+# means a pair 72h apart needs cosine 1.24, so merges simply stopped happening
+# past ~60h. Measured over 315 candidate pairs at cosine >= 0.75, the median
+# sits 151h apart and only 10% fall inside 3 days -- roughly nine tenths of
+# real merges were being refused on time. 30 days keeps 97% of them and still
+# cuts the tail, which runs out to 416 days and is all recurring events.
+MAX_MERGE_GAP_DAYS: int = int(os.environ.get("MAX_MERGE_GAP_DAYS", "30"))
 
 # ---- summaries (milestone 5) -------------------------------------------
 # No key = summarization disabled. Everything else keeps working; cards
@@ -113,6 +130,14 @@ CATEGORY_PACE_SECONDS: float = float(os.environ.get("CATEGORY_PACE_SECONDS", "2"
 # story (US-China trade talks); a third is nearly always a supporting cast
 # member rather than somewhere the story is about.
 PLACE_MAX: int = int(os.environ.get("PLACE_MAX", "2"))
+# Re-tag once a story has grown this much since it was last tagged. Mirrors
+# SUMMARY_REGEN_GROWTH, and matters far more now that merge_pass actually
+# merges: a story that absorbs another is describing a different member set
+# than the one its tags were derived from.
+CATEGORY_REGEN_GROWTH: float = float(os.environ.get("CATEGORY_REGEN_GROWTH", "1.5"))
+# Give up after this many attempts that yield nothing usable. Growth still
+# reopens the story, so this bounds wasted calls rather than closing the door.
+CATEGORY_MAX_ATTEMPTS: int = int(os.environ.get("CATEGORY_MAX_ATTEMPTS", "3"))
 
 
 # ---- profiles -----------------------------------------------------------

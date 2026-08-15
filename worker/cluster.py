@@ -25,13 +25,14 @@ from common.models import Story
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import func, text
+from sqlalchemy import text
 
 from common.config import (
     ACCEPT_COSINE,
     CANDIDATE_MIN_COSINE,
     CANDIDATE_WINDOW_HOURS,
     MAX_MEMBER_GAP_DAYS,
+    MAX_MERGE_GAP_DAYS,
     TIME_DECAY_SIGMA_HOURS,
 )
 from common.models import (
@@ -50,10 +51,21 @@ RETIRE_AFTER_DAYS = 4
 # so this is a safety valve, not part of the algorithm.
 CANDIDATE_LIMIT = 50
 
+# Rows of the similarity product held at once in merge_pass. Memory is
+# MERGE_BLOCK x stories x 4 bytes -- ~126 MB at today's 15.7k stories, and it
+# grows linearly rather than quadratically. Purely a memory knob: the pairs
+# found do not depend on it.
+MERGE_BLOCK = 2000
+
 
 def article_time(article: Article) -> datetime:
-    """published_at is nullable -- some feeds omit it entirely."""
-    return article.published_at or article.first_seen_at
+    """When this article happened, per articles.effective_at.
+
+    Reads the generated column rather than recomputing the fallback here, so
+    clustering and the API can never disagree about an article's time -- they
+    used to hold two copies of the same rule.
+    """
+    return article.effective_at
 
 
 def time_factor(gap_hours: float) -> float:
@@ -228,6 +240,13 @@ def merge_pass(session) -> int:
 
     SINGLE PASS, deliberately. Merging to a fixpoint lets A-B and B-C both be
     borderline and chain unrelated stories together.
+
+    MERGE_THRESHOLD gates on RAW cosine, exactly as ACCEPT_COSINE does in
+    assign(), and for the same reason. Testing cosine * decay against it made
+    the bar age-dependent -- 0.79 at 24h, 0.94 at 48h, and above 1.0 from 72h,
+    so no pair three days apart could merge however identical. Measured over
+    315 candidate pairs, that refused about nine in ten real merges. The decay
+    now only orders the pairs, and MAX_MERGE_GAP_DAYS is the bound.
     """
     rows = session.query(
         Story.id, Story.centroid, Story.last_activity_at, Story.created_at
@@ -235,19 +254,36 @@ def merge_pass(session) -> int:
     if len(rows) < 2:
         return 0
 
-    vectors = np.stack([_as_array(r[1]) for r in rows])
-    vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
-    sims = vectors @ vectors.T
-    np.fill_diagonal(sims, 0.0)
+    # End the read transaction before the arithmetic starts. Everything below
+    # is CPU, and holding a transaction across it leaves the connection "idle
+    # in transaction" for minutes -- long enough to block any ALTER TABLE that
+    # comes along, which is exactly how this was found. The writes further
+    # down open a fresh transaction of their own.
+    session.rollback()
 
+    vectors = np.stack([_as_array(r[1]) for r in rows]).astype(np.float32)
+    vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
+    stamps = np.array([r[2].timestamp() for r in rows], dtype=np.float64)
+    max_gap_hours = MAX_MERGE_GAP_DAYS * 24
+
+    # Blocked, rather than one n x n matrix. The full product is ~1 GB at 15k
+    # stories and grows quadratically; peak here is MERGE_BLOCK rows wide, so
+    # memory stops depending on how big the corpus has got.
     pairs = []
-    for i, j in zip(*np.where(sims >= MERGE_THRESHOLD), strict=True):
-        if i >= j:
-            continue
-        gap = abs((rows[i][2] - rows[j][2]).total_seconds()) / 3600.0
-        score = float(sims[i, j]) * time_factor(gap)
-        if score >= MERGE_THRESHOLD:
-            pairs.append((score, i, j))
+    for start in range(0, len(rows), MERGE_BLOCK):
+        block = vectors[start : start + MERGE_BLOCK] @ vectors.T
+        for offset in range(block.shape[0]):
+            i = start + offset
+            # j > i keeps each pair once and drops the diagonal with it, which
+            # is what fill_diagonal(0) used to be for.
+            js = np.where(block[offset] >= MERGE_THRESHOLD)[0]
+            for j in js[js > i]:
+                gap = abs(stamps[j] - stamps[i]) / 3600.0
+                if gap > max_gap_hours:
+                    continue
+                score = float(block[offset][j]) * time_factor(gap)
+                pairs.append((score, i, int(j)))
+        del block
 
     pairs.sort(reverse=True)
     touched: set[str] = set()
@@ -319,7 +355,7 @@ def cluster_pending(session, limit: int | None = None) -> int:
         session.query(Article)
         .outerjoin(StoryMember, StoryMember.article_id == Article.id)
         .filter(Article.embedding.is_not(None), StoryMember.id.is_(None))
-        .order_by(func.coalesce(Article.published_at, Article.first_seen_at))
+        .order_by(Article.effective_at)
     )
     if limit is not None:
         query = query.limit(limit)

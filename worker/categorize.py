@@ -31,9 +31,11 @@ from sqlalchemy import text
 from common.config import (
     CATEGORY_BATCH_LIMIT,
     CATEGORY_MAX,
+    CATEGORY_MAX_ATTEMPTS,
     CATEGORY_MIN_OUTLETS,
     CATEGORY_MODEL,
     CATEGORY_PACE_SECONDS,
+    CATEGORY_REGEN_GROWTH,
     GROQ_API_KEY,
     PLACE_MAX,
     SUMMARY_BASE_URL,
@@ -113,10 +115,22 @@ def load_places(session) -> tuple[set[str], list[str]]:
 
 
 def stories_needing_categories(session, limit: int) -> list[tuple[str, str]]:
-    """(story_id, title) for feed-eligible stories with no categories yet.
+    """(story_id, title) for feed-eligible stories whose tags need writing.
+
+    Three ways in, and the middle one is the reason this is not simply "has
+    no story_categories row":
+
+      - never attempted
+      - attempted before, and the story has since grown by CATEGORY_REGEN_
+        GROWTH. merge_pass folds whole stories into each other, so a set of
+        tags describes a member set that no longer exists. summarize has the
+        same rule for the same reason.
+      - attempted and failed, with attempts left
 
     Ordered by outlet count so the most-covered stories get tagged first --
     if a run is cut short, the tabs still have their most visible content.
+    That ordering is also why the attempt bound matters: without it a story
+    the model cannot tag comes back to the FRONT of the queue every run.
     """
     rows = session.execute(
         text("""
@@ -124,15 +138,26 @@ def stories_needing_categories(session, limit: int) -> list[tuple[str, str]]:
             from stories s
             join story_members sm on sm.story_id = s.id
             join articles a on a.id = sm.article_id
-            where not exists (
-                select 1 from story_categories sc where sc.story_id = s.id
-            )
-            group by s.id, s.title, s.summary_title
+            group by s.id, s.title, s.summary_title,
+                     s.categorized_at, s.categorized_outlet_count,
+                     s.category_attempts
             having count(distinct a.outlet_id) >= :min_outlets
+               and (
+                     s.categorized_outlet_count is null
+                     or count(distinct a.outlet_id)
+                        >= s.categorized_outlet_count * :growth
+                     or (s.categorized_at is null
+                         and s.category_attempts < :max_attempts)
+                   )
             order by count(distinct a.outlet_id) desc
             limit :limit
         """),
-        {"min_outlets": CATEGORY_MIN_OUTLETS, "limit": limit},
+        {
+            "min_outlets": CATEGORY_MIN_OUTLETS,
+            "growth": CATEGORY_REGEN_GROWTH,
+            "max_attempts": CATEGORY_MAX_ATTEMPTS,
+            "limit": limit,
+        },
     ).all()
     return [(r.id, r.title) for r in rows]
 
@@ -151,7 +176,7 @@ def build_input(session, story_id: str, title: str) -> str:
             join articles a on a.id = sm.article_id
             join outlets o on o.id = a.outlet_id
             where sm.story_id = :sid
-            order by a.outlet_id, coalesce(a.published_at, a.first_seen_at)
+            order by a.outlet_id, a.effective_at
             limit 5
         """),
         {"sid": story_id},
@@ -180,14 +205,24 @@ class Tags(NamedTuple):
 # "exceptionally reserved" in ISO 3166-1 rather than the official codes (GB
 # is), and USA is alpha-3. Deliberately NOT here: ME, which reads as Middle
 # East but is Montenegro -- aliasing it would silently mistag a country.
-_ALIASES = {"EU": "EUROPE", "UK": "GB", "USA": "US"}
+_PLACE_ALIASES = {"EU": "EUROPE", "UK": "GB", "USA": "US"}
 
 
-def _pick(items: object, valid: set[str], limit: int) -> tuple[list[str], list[str]]:
+def _pick(
+    items: object,
+    valid: set[str],
+    limit: int,
+    aliases: dict[str, str] | None = None,
+) -> tuple[list[str], list[str]]:
     """(known values in order, unknown ones). Never raises.
 
     Anything that is not a list of strings yields nothing rather than an
     exception: the model controls this value, so it is input, not data.
+
+    `aliases` is a parameter rather than a module constant read directly:
+    this helper validates categories as well as places, and a place-specific
+    rewrite silently applied to category slugs is a bug waiting for someone
+    to add a category called "US".
     """
     kept: list[str] = []
     dropped: list[str] = []
@@ -197,7 +232,8 @@ def _pick(items: object, valid: set[str], limit: int) -> tuple[list[str], list[s
         if not isinstance(item, str):
             continue
         value = item.strip()
-        value = _ALIASES.get(value, value)
+        if aliases:
+            value = aliases.get(value, value)
         if value in valid:
             if value not in kept:
                 kept.append(value)
@@ -248,7 +284,9 @@ def classify(
         return None
 
     cats, _ = _pick(data.get("categories"), set(catalog), CATEGORY_MAX)
-    places, dropped = _pick(data.get("places"), place_codes, PLACE_MAX)
+    places, dropped = _pick(
+        data.get("places"), place_codes, PLACE_MAX, aliases=_PLACE_ALIASES
+    )
     if not cats and not places:
         return None
     return Tags(cats, places, dropped)
@@ -300,9 +338,25 @@ def main() -> int:
             if tags is None:
                 # An empty result is a real answer: the story fits nothing.
                 # Leaving it untagged is how we find out whether these eight
-                # are the right eight.
+                # are the right eight -- but it has to be RECORDED, or the
+                # story returns to the head of the queue on every future run.
                 skipped += 1
                 print(f"  no category: {title[:56]}")
+                if not args.dry_run:
+                    session.execute(
+                        text("""
+                            update stories
+                               set category_attempts = category_attempts + 1,
+                                   categorized_outlet_count = (
+                                       select count(distinct a.outlet_id)
+                                         from story_members sm
+                                         join articles a on a.id = sm.article_id
+                                        where sm.story_id = :sid)
+                             where id = :sid
+                        """),
+                        {"sid": story_id},
+                    )
+                    session.commit()
                 time.sleep(CATEGORY_PACE_SECONDS)
                 continue
 
@@ -314,6 +368,17 @@ def main() -> int:
                 tagged += 1
                 print(f"  {shown:<40} {title[:44]}")
             else:
+                # Delete first: this story may already carry tags from before
+                # it grew, and ON CONFLICT DO NOTHING would preserve exactly
+                # the stale rows we came back to replace.
+                session.execute(
+                    text("delete from story_categories where story_id = :sid"),
+                    {"sid": story_id},
+                )
+                session.execute(
+                    text("delete from story_places where story_id = :sid"),
+                    {"sid": story_id},
+                )
                 for rank, slug in enumerate(tags.categories):
                     session.execute(
                         text("""
@@ -333,8 +398,26 @@ def main() -> int:
                         """),
                         {"sid": story_id, "code": code, "rank": rank},
                     )
-                # One commit for both, so a story is never half-tagged --
-                # stories_needing_categories keys off story_categories alone.
+                # Records that this story WAS tagged and at what size, which
+                # is what stories_needing_categories reads to decide whether
+                # the tags have gone stale. attempts resets: the story is no
+                # longer one the model cannot handle.
+                session.execute(
+                    text("""
+                        update stories
+                           set categorized_at = now(),
+                               category_attempts = 0,
+                               categorized_outlet_count = (
+                                   select count(distinct a.outlet_id)
+                                     from story_members sm
+                                     join articles a on a.id = sm.article_id
+                                    where sm.story_id = :sid)
+                         where id = :sid
+                    """),
+                    {"sid": story_id},
+                )
+                # One commit for the lot, so a story is never left half-tagged
+                # or tagged-but-unrecorded.
                 session.commit()
                 tagged += 1
 

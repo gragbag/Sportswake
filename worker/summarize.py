@@ -111,7 +111,7 @@ def build_input(session, story_id: str) -> str:
                 o.name, a.headline, a.lede,
                 -- NOT "as t": SQLAlchemy Row objects own a legacy .t
                 -- attribute (row-as-tuple), which shadows a column named t.
-                coalesce(a.published_at, a.first_seen_at) as pub_at
+                a.effective_at as pub_at
             from story_members sm
             join articles a on a.id = sm.article_id
             join outlets o on o.id = a.outlet_id
