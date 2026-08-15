@@ -273,6 +273,31 @@ def merge_pass(session) -> int:
             ),
             {"keep": keep[0], "other": absorb[2]},
         )
+        # Everything a person made follows the merge. These cannot be left to
+        # ON DELETE CASCADE the way story_categories is: a cascade would
+        # silently destroy someone's saved story or their comment, and a merge
+        # is a housekeeping decision the reader never asked for.
+        session.execute(
+            text("UPDATE comments SET story_id = :keep WHERE story_id = :absorb"),
+            {"keep": keep[0], "absorb": absorb[0]},
+        )
+        # uq_favorites_user_story collides when the reader had already
+        # favourited BOTH stories -- which is exactly the case a merge creates,
+        # since the two were near-duplicates. Move what fits, drop the rest.
+        session.execute(
+            text(
+                "UPDATE favorites SET story_id = :keep WHERE story_id = :absorb"
+                "  AND NOT EXISTS ("
+                "    SELECT 1 FROM favorites f2"
+                "     WHERE f2.user_id = favorites.user_id AND f2.story_id = :keep)"
+            ),
+            {"keep": keep[0], "absorb": absorb[0]},
+        )
+        session.execute(
+            text("DELETE FROM favorites WHERE story_id = :absorb"),
+            {"absorb": absorb[0]},
+        )
+        # story_categories needs nothing here -- its FK cascades (0011).
         session.execute(
             text("DELETE FROM stories WHERE id = :absorb"), {"absorb": absorb[0]}
         )
