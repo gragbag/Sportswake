@@ -12,6 +12,7 @@ from typing import Any
 from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import (
     Boolean,
+    Computed,
     DateTime,
     Float,
     ForeignKey,
@@ -89,6 +90,27 @@ class Article(Base):
         DateTime(timezone=True), default=utcnow
     )
 
+    # When this article happened, as opposed to what the feed claimed. Every
+    # query that orders or groups by time should use THIS, not published_at:
+    # it is the one place the rule lives, and it was previously copied into
+    # eleven separate coalesce() expressions that could drift apart.
+    #
+    # Generated, so it cannot disagree with its inputs, and so published_at
+    # stays exactly what the outlet published. It currently repairs only the
+    # impossible -- a missing date, or one after we fetched the item. A date
+    # weeks BEFORE we saw it is left alone on purpose: that is either a
+    # republished evergreen or an item we were late to fetch, and no rule
+    # here can tell those apart.
+    effective_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        Computed(
+            "case when published_at is null then first_seen_at "
+            "when published_at > first_seen_at then first_seen_at "
+            "else published_at end",
+            persisted=True,
+        ),
+    )
+
     embedding: Mapped[list[float] | None] = mapped_column(HALFVEC(EMBEDDING_DIM))
 
     # Dedup key. Reruns and overlapping fetch windows are safe because inserts
@@ -96,6 +118,9 @@ class Article(Base):
     __table_args__ = (
         UniqueConstraint("outlet_id", "guid", name="uq_articles_outlet_guid"),
         Index("ix_articles_published_at", "published_at"),
+        # Ordering by time is the most common thing done to this table, and
+        # every one of those queries now reads effective_at, not published_at.
+        Index("ix_articles_effective_at", "effective_at"),
     )
 
 
@@ -165,6 +190,20 @@ class Story(Base):
     # Distinct outlets at summary time. The regen rule compares the current
     # count against this * SUMMARY_REGEN_GROWTH.
     summarized_outlet_count: Mapped[int | None] = mapped_column(Integer)
+
+    # The same three questions for categories that the two columns above ask
+    # for summaries, plus one they do not need. NULL categorized_at means no
+    # successful tagging yet; categorized_outlet_count is set on failures too,
+    # so a story the model could not place can be reconsidered once it grows
+    # rather than being written off forever.
+    categorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    categorized_outlet_count: Mapped[int | None] = mapped_column(Integer)
+    # Consecutive attempts that produced nothing usable. Without a bound these
+    # stories return to the FRONT of the queue every run, because it is
+    # ordered by outlet count -- so N hopeless stories cost N slots forever.
+    category_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, server_default="0", default=0
+    )
 
     __table_args__ = (Index("ix_stories_last_activity", "last_activity_at"),)
 

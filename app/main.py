@@ -200,8 +200,8 @@ _CARD_COLUMNS = """
     s.id, s.title, s.summary_title, s.summary_subhead,
     count(*) as article_count,
     count(distinct a.outlet_id) as outlet_count,
-    min(coalesce(a.published_at, a.first_seen_at)) as first_at,
-    max(coalesce(a.published_at, a.first_seen_at)) as last_at
+    min(a.effective_at) as first_at,
+    max(a.effective_at) as last_at
 """
 
 
@@ -217,7 +217,7 @@ def _attach_members(session, rows) -> list[dict]:
     members = session.execute(
         text("""
             select sm.story_id, o.name,
-                   coalesce(a.published_at, a.first_seen_at) as pub_at
+                   a.effective_at as pub_at
             from story_members sm
             join articles a on a.id = sm.article_id
             join outlets o on o.id = a.outlet_id
@@ -315,7 +315,7 @@ def api_stories(limit: int = 24, category: str | None = None) -> list[dict]:
                 group by s.id
                 having count(distinct a.outlet_id) >= 2
                 order by count(distinct a.outlet_id) desc, max(
-                    coalesce(a.published_at, a.first_seen_at)) desc
+                    a.effective_at) desc
                 limit :limit
             """),
             {"limit": limit, "category": category} if category else {"limit": limit},
@@ -1123,8 +1123,8 @@ def api_story(story_id: str) -> dict:
                        s.summarized_at,
                        count(*) as article_count,
                        count(distinct a.outlet_id) as outlet_count,
-                       min(coalesce(a.published_at, a.first_seen_at)) as first_at,
-                       max(coalesce(a.published_at, a.first_seen_at)) as last_at
+                       min(a.effective_at) as first_at,
+                       max(a.effective_at) as last_at
                 from stories s
                 join story_members sm on sm.story_id = s.id
                 join articles a on a.id = sm.article_id
@@ -1142,7 +1142,7 @@ def api_story(story_id: str) -> dict:
         articles = session.execute(
             text("""
                 select o.name as outlet, a.headline, a.url,
-                       coalesce(a.published_at, a.first_seen_at) as pub_at
+                       a.effective_at as pub_at
                 from story_members sm
                 join articles a on a.id = sm.article_id
                 join outlets o on o.id = a.outlet_id
