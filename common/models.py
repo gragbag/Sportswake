@@ -280,6 +280,10 @@ class Category(Base):
 
     slug: Mapped[str] = mapped_column(String(32), primary_key=True)
     label: Mapped[str] = mapped_column(String(64))
+    # Goes into the classifier prompt, which is the only thing that reads it.
+    # A bare label left "Culture" meaning whatever the model guessed per call,
+    # so this is load-bearing rather than documentation.
+    description: Mapped[str] = mapped_column(String(200))
     # Tab order. Data rather than code, so reordering is an UPDATE.
     sort_order: Mapped[int] = mapped_column(SmallInteger)
 
@@ -293,8 +297,13 @@ class StoryCategory(Base):
 
     __tablename__ = "story_categories"
 
+    # CASCADE, unlike favorites and comments: a tag is derived data that
+    # worker.categorize regenerates, so a merge may delete it silently. The
+    # tables holding things a person made must never do that.
     story_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False), ForeignKey("stories.id"), primary_key=True
+        UUID(as_uuid=False),
+        ForeignKey("stories.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     category_slug: Mapped[str] = mapped_column(
         String(32), ForeignKey("categories.slug"), primary_key=True
@@ -309,6 +318,57 @@ class StoryCategory(Base):
     # slug has to lead. The PK index leads with story_id, which serves the
     # opposite direction.
     __table_args__ = (Index("ix_story_categories_slug", "category_slug", "story_id"),)
+
+
+class Place(Base):
+    """Where a story happens. Reference data, seeded by the migration.
+
+    Holds three kinds in one table -- 'country', 'region' and 'global' -- so
+    a story that spans a continent still gets a place rather than falling
+    through to nothing. Region codes are longer than two characters, so a
+    code's length distinguishes it from an ISO 3166-1 alpha-2 country
+    without reading `kind`.
+
+    The country list is curated rather than the full ISO 249. Adding one is
+    an INSERT, not a migration, because code is the primary key.
+    """
+
+    __tablename__ = "places"
+
+    code: Mapped[str] = mapped_column(String(8), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(8))
+    sort_order: Mapped[int] = mapped_column(SmallInteger)
+
+
+class StoryPlace(Base):
+    """Where a story happens. Same shape as StoryCategory, same reasons.
+
+    Separate from story_categories rather than one polymorphic tag table:
+    the two are validated differently -- categories against a list the model
+    is shown, places against one it is not -- and a tab query for either
+    should never have to filter out the other kind.
+    """
+
+    __tablename__ = "story_places"
+
+    story_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("stories.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    place_code: Mapped[str] = mapped_column(
+        String(8), ForeignKey("places.code"), primary_key=True
+    )
+    # 0 is the primary place -- where the story mostly happens.
+    rank: Mapped[int] = mapped_column(SmallInteger, default=0)
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+    # Mirrors ix_story_categories_slug: the PK leads with story_id, so
+    # "every story in India" needs the columns the other way round.
+    __table_args__ = (Index("ix_story_places_code", "place_code", "story_id"),)
 
 
 class Comment(Base):

@@ -107,6 +107,12 @@ CATEGORY_MAX: int = int(os.environ.get("CATEGORY_MAX", "2"))
 # 8b-instant allows 30 req/min; 2s keeps a wide margin without dragging out
 # a 60-story batch.
 CATEGORY_PACE_SECONDS: float = float(os.environ.get("CATEGORY_PACE_SECONDS", "2"))
+# Places are assigned by the same call as categories -- same evidence, and a
+# second request would double the rate-limit cost to answer a question the
+# model has already read the input for. Two covers the genuinely bilateral
+# story (US-China trade talks); a third is nearly always a supporting cast
+# member rather than somewhere the story is about.
+PLACE_MAX: int = int(os.environ.get("PLACE_MAX", "2"))
 
 
 # ---- profiles -----------------------------------------------------------
