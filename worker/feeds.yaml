@@ -40,6 +40,9 @@ feeds:
   - name: Sportsnaut NBA
     url: https://sportsnaut.com/category/nba/feed/
 
+  - name: NY Post NBA
+    url: https://nypost.com/nba/feed/
+
   - name: Fadeaway World
     url: https://fadeawayworld.net/feed
 
@@ -66,20 +69,50 @@ feeds:
   - name: Eurohoops
     url: https://www.eurohoops.net/en/feed/
 
-  # --- General US sport ----------------------------------------------------
-  # NOT NBA-only. These carry every sport, so most of what they publish is
-  # noise here -- they earn their place by covering the biggest NBA stories,
-  # which is exactly what makes a story multi-outlet. Watch the ratio: if
-  # they contribute mostly singletons, drop them.
+  - name: Sportando
+    url: https://sportando.basketball/en/feed/
 
-  - name: Sporting News
-    url: https://www.sportingnews.com/us/rss
+  # --- NBA verticals of general-sport outlets -------------------------------
+  # These replaced the outlets' all-sport feeds on day one. The general feeds
+  # clustered with EACH OTHER on non-NBA stories -- two carried the same MLB
+  # milestone, which cleared the 2-outlet floor and put baseball in the feed.
+  # Scoping the source is the fix that keeps "select sources, never topics"
+  # true. Named with an NBA suffix because a changed URL creates a NEW outlet
+  # row: the old rows keep their articles and simply stop growing.
+  # (Athlon Sports had no NBA-scoped feed and is in the rejected list.)
 
-  - name: Athlon Sports
-    url: https://athlonsports.com/.rss/full/
+  - name: Sporting News NBA
+    url: https://www.sportingnews.com/us/rss/nba
 
-  - name: Yardbarker
-    url: https://www.yardbarker.com/rss/sport/2
+  - name: Yardbarker NBA
+    url: https://www.yardbarker.com/rss/sport/3
+
+  # --- Team sites (pilot) ---------------------------------------------------
+  # SB Nation's per-team network -- the big-market five to start. Low volume
+  # and single-team by design: they confirm clusters on team stories, and
+  # later they power coverage gaps ("outlets that normally cover this team
+  # and didn't"). If the pilot earns its place, the other 25 clubs follow
+  # the same /rss/index.xml pattern.
+
+  - name: Silver Screen and Roll
+    url: https://www.silverscreenandroll.com/rss/index.xml
+
+  - name: CelticsBlog
+    url: https://www.celticsblog.com/rss/index.xml
+
+  - name: Golden State of Mind
+    url: https://www.goldenstateofmind.com/rss/index.xml
+
+  - name: Posting and Toasting
+    url: https://www.postingandtoasting.com/rss/index.xml
+
+  - name: Liberty Ballers
+    url: https://www.libertyballers.com/rss/index.xml
+
+  # A beat NEWSPAPER, not a fan site -- the only local paper found so far
+  # with working team-scoped RSS. Exactly what coverage gaps will want.
+  - name: LA Times Lakers
+    url: https://www.latimes.com/sports/lakers/rss2.0.xml
 
 # --- Rejected, do not re-add without re-verifying --------------------------
 # Probed 2026-08-15. The hit rate was 14 of 38, far worse than the 28 of 30
@@ -106,3 +139,17 @@ feeds:
 #   Basketball Ins.  parses fine, newest item 4,941h old. Site is abandoned.
 #   Amico Hoops      newest item 302h old
 #   Def Pen Hoops    newest item 145h old
+#   BasketNews       /rss.xml returns 200 with zero items
+#   HoopsHabit       fresh and busy, but items carry no description -- the
+#                    lede is most of what the embedder sees, so it would
+#                    cluster on headlines alone
+#   Athlon Sports    was in the feed list; dropped. All-sport feed only
+#                    (guessed NBA paths 403/404), clustered at 7/50, and
+#                    paired with other general feeds on non-NBA stories.
+#   FanSided network fresh and busy, but no descriptions on any site tried
+#                    (HoopsHabit, Lake Show Life -- 2 of 2). Treat the whole
+#                    network as failing until one disproves it.
+#   Mercury News     tag feeds return 200 with zero items
+#   NBC Sports RSN   /feed/ has a channel header but zero items; JS-rendered
+#   theScore         /rss 404
+#   basketballnews   /rss 404

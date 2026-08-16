@@ -63,6 +63,11 @@ class Outlet(Base):
     etag: Mapped[str | None] = mapped_column(Text)
     last_modified: Mapped[str | None] = mapped_column(Text)
 
+    # "Fetch this", not "this exists". sync_outlets keeps it aligned with
+    # feeds.yaml membership, so removing a yaml entry retires the feed while
+    # its articles keep their outlet row and history survives.
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
     )

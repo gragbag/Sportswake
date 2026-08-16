@@ -39,7 +39,13 @@ TIMEOUT = 20
 
 
 def sync_outlets(session) -> list[Outlet]:
-    """Seed outlets from feeds.yaml. Safe to run every time."""
+    """Seed outlets from feeds.yaml, retire the ones no longer in it.
+
+    Safe to run every time. `active` follows yaml membership by feed_url, so
+    deleting a yaml entry is how a feed gets retired -- the outlet row and
+    its articles stay, it just stops being fetched. Re-adding the same URL
+    revives the original row rather than creating a duplicate.
+    """
     config = yaml.safe_load(FEEDS_FILE.read_text())
     for entry in config["feeds"]:
         stmt = (
@@ -52,8 +58,11 @@ def sync_outlets(session) -> list[Outlet]:
             .on_conflict_do_nothing(index_elements=["feed_url"])
         )
         session.execute(stmt)
+
+    urls = [entry["url"] for entry in config["feeds"]]
+    session.query(Outlet).update({Outlet.active: Outlet.feed_url.in_(urls)})
     session.commit()
-    return session.query(Outlet).order_by(Outlet.name).all()
+    return session.query(Outlet).filter(Outlet.active).order_by(Outlet.name).all()
 
 
 def parse_published(entry) -> datetime | None:
