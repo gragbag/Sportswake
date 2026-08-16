@@ -1,7 +1,11 @@
 """Assign articles to stories.
 
-Backfill everything:  python -m worker.cluster
-During ingestion:     ingest.py calls cluster_pending() after embed_pending().
+Backfill everything:  python -m worker.cluster          (cluster, then merge)
+Hourly CI:            python -m worker.cluster --no-merge
+Daily CI:             python -m worker.cluster --merge-only
+
+Merging runs daily, not hourly: needs_merge accumulates the stories worth
+looking at, so nothing is lost by batching a day of them into one pass.
 
 Single-pass incremental assignment: each article joins the best-scoring story
 in the candidate window, or seeds a new one. Deterministic given the same
@@ -18,14 +22,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
-import numpy as np
-
 from common.config import MERGE_THRESHOLD
 from common.models import Story
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from common.config import (
     ACCEPT_COSINE,
@@ -50,12 +52,6 @@ RETIRE_AFTER_DAYS = 4
 # Cap on candidates scored per article. The SQL filter below is already exact,
 # so this is a safety valve, not part of the algorithm.
 CANDIDATE_LIMIT = 50
-
-# Rows of the similarity product held at once in merge_pass. Memory is
-# MERGE_BLOCK x stories x 4 bytes -- ~126 MB at today's 15.7k stories, and it
-# grows linearly rather than quadratically. Purely a memory knob: the pairs
-# found do not depend on it.
-MERGE_BLOCK = 2000
 
 
 def article_time(article: Article) -> datetime:
@@ -150,10 +146,14 @@ def recompute_centroid(session, story: Story) -> None:
     query returns the vector as a str, and pgvector's halfvec binder rejects
     strings. Updating in place also avoids shipping 384 floats out and back
     on every membership change.
+
+    needs_merge rides along because this is the only place an existing
+    story's centroid changes -- setting it here and at seed time is the whole
+    contract merge_pass relies on.
     """
     session.execute(
         text(
-            "UPDATE stories SET centroid = ("
+            "UPDATE stories SET needs_merge = true, centroid = ("
             "  SELECT avg(a.embedding)::halfvec FROM articles a"
             "  JOIN story_members sm ON sm.article_id = a.id"
             "  WHERE sm.story_id = :sid"
@@ -161,7 +161,7 @@ def recompute_centroid(session, story: Story) -> None:
         ),
         {"sid": story.id},
     )
-    session.expire(story, ["centroid"])
+    session.expire(story, ["centroid", "needs_merge"])
 
 
 def assign(session, article: Article) -> Story:
@@ -220,13 +220,6 @@ def assign(session, article: Article) -> Story:
     return story
 
 
-def _as_array(centroid) -> np.ndarray:
-    """Centroids come back as ndarray via the ORM but as a string from raw SQL."""
-    if isinstance(centroid, str):
-        return np.fromstring(centroid.strip("[]"), sep=",", dtype=np.float32)
-    return np.asarray(centroid, dtype=np.float32)
-
-
 def merge_pass(session) -> int:
     """Merge stories whose centroids have converged.
 
@@ -247,53 +240,79 @@ def merge_pass(session) -> int:
     so no pair three days apart could merge however identical. Measured over
     315 candidate pairs, that refused about nine in ten real merges. The decay
     now only orders the pairs, and MAX_MERGE_GAP_DAYS is the bound.
+
+    Vectors never leave Postgres. This used to SELECT every centroid and take
+    a blocked NumPy product over them -- ~3 KB of vector-as-text per story per
+    run, which at 15k stories, hourly, was most of Supabase's monthly egress
+    budget by itself. pgvector computes the same cosines next to the data, and
+    what crosses the wire is only the pairs that clear the bar: two ids and
+    three timestamps each.
+
+    Only stories flagged needs_merge are scored, and skipping the rest loses
+    nothing. A pair with neither centroid changed got this exact comparison in
+    an earlier pass and was refused then -- raw cosine gates, so its verdict
+    cannot age. A pair the greedy loop below skips as `touched` always involves
+    a keep whose centroid was just recomputed, which re-flags it for the next
+    pass. Every genuinely new pair has a changed side, and changed sides are
+    exactly what the flag records.
     """
-    rows = session.query(
-        Story.id, Story.centroid, Story.last_activity_at, Story.created_at
-    ).all()
-    if len(rows) < 2:
+    dirty = [
+        r[0] for r in session.execute(text("SELECT id FROM stories WHERE needs_merge"))
+    ]
+    if not dirty:
         return 0
 
-    # End the read transaction before the arithmetic starts. Everything below
-    # is CPU, and holding a transaction across it leaves the connection "idle
-    # in transaction" for minutes -- long enough to block any ALTER TABLE that
-    # comes along, which is exactly how this was found. The writes further
-    # down open a fresh transaction of their own.
-    session.rollback()
+    # One dirty side, the partner anywhere in the gap window. When BOTH sides
+    # are dirty the join yields the pair once per orientation, and the id
+    # ordering keeps one; a dirty-vs-clean pair must survive whichever way its
+    # ids happen to compare, hence the NOT. The distance filter runs where the
+    # vectors live, which is the entire point of this query.
+    candidates = session.execute(
+        text(
+            "SELECT a.id, a.last_activity_at, a.created_at,"
+            "       b.id, b.last_activity_at, b.created_at,"
+            "       1 - (a.centroid <=> b.centroid) AS cosine"
+            "  FROM stories a"
+            "  JOIN stories b ON b.id != a.id"
+            "   AND (NOT b.needs_merge OR b.id > a.id)"
+            "   AND b.last_activity_at BETWEEN a.last_activity_at - :gap"
+            "                              AND a.last_activity_at + :gap"
+            "   AND a.centroid <=> b.centroid <= :ceiling"
+            " WHERE a.needs_merge"
+        ),
+        {"gap": timedelta(days=MAX_MERGE_GAP_DAYS), "ceiling": 1.0 - MERGE_THRESHOLD},
+    ).all()
 
-    vectors = np.stack([_as_array(r[1]) for r in rows]).astype(np.float32)
-    vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
-    stamps = np.array([r[2].timestamp() for r in rows], dtype=np.float64)
-    max_gap_hours = MAX_MERGE_GAP_DAYS * 24
+    # Clear the flags BEFORE the merges below re-flag their keeps: a story
+    # that just absorbed another has a new centroid and belongs in the next
+    # pass. Same transaction as the merges themselves, so a crash rolls back
+    # both and the next pass simply redoes this one.
+    session.execute(
+        text("UPDATE stories SET needs_merge = false WHERE id IN :ids").bindparams(
+            bindparam("ids", expanding=True)
+        ),
+        {"ids": dirty},
+    )
 
-    # Blocked, rather than one n x n matrix. The full product is ~1 GB at 15k
-    # stories and grows quadratically; peak here is MERGE_BLOCK rows wide, so
-    # memory stops depending on how big the corpus has got.
     pairs = []
-    for start in range(0, len(rows), MERGE_BLOCK):
-        block = vectors[start : start + MERGE_BLOCK] @ vectors.T
-        for offset in range(block.shape[0]):
-            i = start + offset
-            # j > i keeps each pair once and drops the diagonal with it, which
-            # is what fill_diagonal(0) used to be for.
-            js = np.where(block[offset] >= MERGE_THRESHOLD)[0]
-            for j in js[js > i]:
-                gap = abs(stamps[j] - stamps[i]) / 3600.0
-                if gap > max_gap_hours:
-                    continue
-                score = float(block[offset][j]) * time_factor(gap)
-                pairs.append((score, i, int(j)))
-        del block
+    for a_id, a_act, a_created, b_id, b_act, b_created, cosine in candidates:
+        gap = abs((a_act - b_act).total_seconds()) / 3600.0
+        pairs.append(
+            (
+                float(cosine) * time_factor(gap),
+                (a_id, a_act, a_created),
+                (b_id, b_act, b_created),
+            )
+        )
 
-    pairs.sort(reverse=True)
+    # Ids as tiebreak, so equal scores cannot make the pass order-dependent.
+    pairs.sort(key=lambda p: (-p[0], p[1][0], p[2][0]))
     touched: set[str] = set()
     merged = 0
 
-    for _score, i, j in pairs:
+    for _score, a, b in pairs:
         # Older story survives, so a story ID minted earlier keeps its meaning.
-        keep, absorb = (
-            (rows[i], rows[j]) if rows[i][3] <= rows[j][3] else (rows[j], rows[i])
-        )
+        keep, absorb = (a, b) if a[2] <= b[2] else (b, a)
         if keep[0] in touched or absorb[0] in touched:
             continue
 
@@ -307,7 +326,7 @@ def merge_pass(session) -> int:
                 "  (select last_activity_at from stories where id = :keep), :other"
                 ") WHERE id = :keep"
             ),
-            {"keep": keep[0], "other": absorb[2]},
+            {"keep": keep[0], "other": absorb[1]},
         )
         # Everything a person made follows the merge. These cannot be left to
         # ON DELETE CASCADE the way story_categories is: a cascade would
@@ -372,6 +391,8 @@ def cluster_pending(session, limit: int | None = None) -> int:
 
 def main() -> int:
     reset = "--reset" in sys.argv
+    merge_only = "--merge-only" in sys.argv
+    no_merge = "--no-merge" in sys.argv
     Session = make_session_factory(make_engine())
     with Session() as session:
         if reset:
@@ -384,22 +405,24 @@ def main() -> int:
             session.commit()
             print("cleared stories and story_members")
 
-        pending = (
-            session.query(Article)
-            .outerjoin(StoryMember, StoryMember.article_id == Article.id)
-            .filter(Article.embedding.is_not(None), StoryMember.id.is_(None))
-            .count()
-        )
-        print(
-            f"{pending} articles to cluster  "
-            f"(accept {ACCEPT_COSINE}, floor {CANDIDATE_MIN_COSINE}, "
-            f"window {CANDIDATE_WINDOW_HOURS}h, sigma {TIME_DECAY_SIGMA_HOURS}h)"
-        )
-        if pending:
-            print(f"done, {cluster_pending(session)} assigned")
+        if not merge_only:
+            pending = (
+                session.query(Article)
+                .outerjoin(StoryMember, StoryMember.article_id == Article.id)
+                .filter(Article.embedding.is_not(None), StoryMember.id.is_(None))
+                .count()
+            )
+            print(
+                f"{pending} articles to cluster  "
+                f"(accept {ACCEPT_COSINE}, floor {CANDIDATE_MIN_COSINE}, "
+                f"window {CANDIDATE_WINDOW_HOURS}h, sigma {TIME_DECAY_SIGMA_HOURS}h)"
+            )
+            if pending:
+                print(f"done, {cluster_pending(session)} assigned")
 
-        merged = merge_pass(session)
-        print(f"merge pass: {merged} stories absorbed")
+        if not no_merge:
+            merged = merge_pass(session)
+            print(f"merge pass: {merged} stories absorbed")
 
         stories = session.query(Story).count()
         members = session.query(StoryMember).count()

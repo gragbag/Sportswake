@@ -27,18 +27,21 @@ down_revision = "0009"
 branch_labels = None
 depends_on = None
 
-# Chosen to match what this corpus actually contains, not an abstract
-# taxonomy. Eight keeps roughly 70 multi-outlet stories per tab; twenty
-# would leave most tabs looking broken.
+# What KIND of story, not who it is about -- teams live in their own table
+# (0013) and the classifier returns both from one call. Seven, because the
+# corpus is one league: a taxonomy wide enough for general news would leave
+# most tabs empty here.
+#
+# Ordered by how much of the corpus each is expected to hold, so the busiest
+# tabs sit leftmost.
 _SEED = [
-    ("world", "World", 1),
-    ("us-politics", "US Politics", 2),
-    ("business", "Business & Economy", 3),
-    ("technology", "Technology", 4),
-    ("science-health", "Science & Health", 5),
-    ("crime-justice", "Crime & Justice", 6),
-    ("sports", "Sports", 7),
-    ("culture", "Culture", 8),
+    ("games", "Games", 1),
+    ("trades", "Trades", 2),
+    ("free-agency", "Free Agency", 3),
+    ("injuries", "Injuries", 4),
+    ("draft", "Draft", 5),
+    ("business", "Business", 6),
+    ("off-court", "Off Court", 7),
 ]
 
 

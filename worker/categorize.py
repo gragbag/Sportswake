@@ -37,42 +37,39 @@ from common.config import (
     CATEGORY_PACE_SECONDS,
     CATEGORY_REGEN_GROWTH,
     GROQ_API_KEY,
-    PLACE_MAX,
     SUMMARY_BASE_URL,
+    TEAM_MAX,
 )
 from common.models import make_engine, make_session_factory
 
 # "JSON" must appear literally -- Groq's json_object mode rejects the
 # request otherwise.
 _PROMPT = """\
-Tag a news story. You are given its headline and how several outlets
+Tag an NBA news story. You are given its headline and how several outlets
 covered it.
 
 Choose categories from exactly this list:
 {catalog}
 
-Also say WHERE the story happens, as "places":
-  - a country, as its ISO 3166-1 alpha-2 code (GB, IN, US, BR)
-  - or one of these when no single country fits:
-{regions}
-  - GLOBAL only when the story genuinely spans continents. An event
-    crossing several countries in one part of the world is that region,
-    not GLOBAL.
-
-Always prefer the country. A region is for stories no single country is
-the subject of -- an attack inside Ukraine is UA, not EUROPE, even when
-other countries react to it.
+Also say WHICH TEAMS the story is about, as "teams":
+  - a team, as its standard three-letter code (LAL, BOS, GSW, NYK)
+  - or one of these when no single team is the subject:
+{scopes}
 
 Reply with JSON only:
-  {{"categories": ["slug", ...], "places": ["code", ...]}}
+  {{"categories": ["slug", ...], "teams": ["code", ...]}}
 
-Give ONE category, and a second only when the story is genuinely central to
-both -- a tariff announcement is politics and business; a football transfer
-is only sports. Places work the same way: one, or two when the story is
-equally about both -- US-China trade talks are US and CN.
+Give ONE category, and a second only when the story is genuinely both --
+a trade that clears cap space is trades and free-agency; a game recap is
+only games.
 
-Never more than {max_n} of either. Use the slugs and codes exactly as
-written. Prefer an empty list over forcing a choice.
+Teams work differently: name EVERY team the story is actually about, up to
+{max_n}. A trade has two sides and both belong. A game involves both clubs.
+Use LEAGUE only for genuinely league-wide news -- the CBA, expansion, media
+rights -- never as a fallback when you are unsure.
+
+Use the slugs and codes exactly as written. Prefer an empty list over
+forcing a choice.
 """
 
 
@@ -96,21 +93,22 @@ def load_catalog(session) -> dict[str, str]:
     return {r.slug: f"{r.label} -- {r.description}" for r in rows}
 
 
-def load_places(session) -> tuple[set[str], list[str]]:
-    """(every valid code, the region/global codes only).
+def load_teams(session) -> tuple[set[str], list[str]]:
+    """(every valid code, the conference/league codes only).
 
     The full set is the validator; only the second list reaches the prompt.
-    Sending all ~130 countries would cost roughly 1,500 tokens per call
-    against this model's 6,000 TPM ceiling -- about four stories a minute.
-    The model already knows ISO 3166-1 alpha-2, so it is asked for a code
-    and checked afterwards, which is the opposite of how categories work.
+    Thirty team codes would fit, unlike the ~130 countries this replaced, but
+    they still do not need to be sent: LAL and BOS appear in every box score
+    ever written, so the model emits them correctly unprompted. Asking for a
+    code and checking it afterwards is the opposite of how categories work,
+    where the model is shown the list because the slugs are ours.
     """
     rows = session.execute(
-        text("select code, kind from places order by sort_order")
+        text("select code, kind from teams order by sort_order")
     ).all()
     return (
         {r.code for r in rows},
-        [r.code for r in rows if r.kind != "country"],
+        [r.code for r in rows if r.kind != "team"],
     )
 
 
@@ -188,24 +186,27 @@ def build_input(session, story_id: str, title: str) -> str:
 class Tags(NamedTuple):
     """One classify() result.
 
-    `dropped` is here because the country list is curated. From inside this
-    function a real code the table happens not to hold is indistinguishable
-    from a hallucination, and only a person reading the output can tell them
-    apart -- so they get printed rather than discarded silently. That is the
-    whole mitigation for choosing a curated list over the full ISO 249.
+    `dropped` is here because the roster is fixed. From inside this
+    function a code the table does not hold is indistinguishable from a
+    hallucination, and only a person reading the output can tell them apart.
+    They get printed rather than dropped silently -- which is how a genuine
+    gap (a relocated franchise, a second league) becomes visible instead of
+    quietly costing every story about it.
     """
 
     categories: list[str]
-    places: list[str]
+    teams: list[str]
     dropped: list[str]
 
 
-# Codes the model reaches for that are not what this table calls them. All
-# three are things it is right to emit and wrong to reject: EU and UK are
-# "exceptionally reserved" in ISO 3166-1 rather than the official codes (GB
-# is), and USA is alpha-3. Deliberately NOT here: ME, which reads as Middle
-# East but is Montenegro -- aliasing it would silently mistag a country.
-_PLACE_ALIASES = {"EU": "EUROPE", "UK": "GB", "USA": "US"}
+_TEAM_ALIASES = {
+    # Codes the model reaches for that are not what this table calls them.
+    # Every one is a real abbreviation in circulation: NBA.com uses NOH and
+    # NO for New Orleans, box scores vary between PHO and PHX, and BRK is
+    # Basketball-Reference's own code for Brooklyn.
+    "NO": "NOP", "NOH": "NOP", "PHO": "PHX", "BRK": "BKN",
+    "GS": "GSW", "SA": "SAS", "NY": "NYK", "UTAH": "UTA", "WSH": "WAS",
+}
 
 
 def _pick(
@@ -220,9 +221,9 @@ def _pick(
     exception: the model controls this value, so it is input, not data.
 
     `aliases` is a parameter rather than a module constant read directly:
-    this helper validates categories as well as places, and a place-specific
+    this helper validates categories as well as teams, and a team-specific
     rewrite silently applied to category slugs is a bug waiting for someone
-    to add a category called "US".
+    to add a category whose slug collides with an abbreviation.
     """
     kept: list[str] = []
     dropped: list[str] = []
@@ -245,11 +246,11 @@ def _pick(
 def classify(
     client: OpenAI,
     catalog: dict[str, str],
-    place_codes: set[str],
-    regions: list[str],
+    team_codes: set[str],
+    scopes: list[str],
     body: str,
 ) -> Tags | None:
-    """Valid slugs and place codes in rank order, or None if nothing landed.
+    """Valid slugs and team codes in rank order, or None if nothing landed.
 
     Invalid values are DROPPED rather than failing the whole call -- the same
     treatment summarize.py gives hallucinated names. A model that invents
@@ -268,8 +269,8 @@ def classify(
                 "role": "system",
                 "content": _PROMPT.format(
                     catalog=catalog_text,
-                    regions="    " + "  ".join(regions),
-                    max_n=CATEGORY_MAX,
+                    scopes="    " + "  ".join(scopes),
+                    max_n=TEAM_MAX,
                 ),
             },
             {"role": "user", "content": body},
@@ -284,12 +285,12 @@ def classify(
         return None
 
     cats, _ = _pick(data.get("categories"), set(catalog), CATEGORY_MAX)
-    places, dropped = _pick(
-        data.get("places"), place_codes, PLACE_MAX, aliases=_PLACE_ALIASES
+    teams, dropped = _pick(
+        data.get("teams"), team_codes, TEAM_MAX, aliases=_TEAM_ALIASES
     )
-    if not cats and not places:
+    if not cats and not teams:
         return None
-    return Tags(cats, places, dropped)
+    return Tags(cats, teams, dropped)
 
 
 def main() -> int:
@@ -312,9 +313,9 @@ def main() -> int:
         if not catalog:
             print("no categories seeded; run migrations first")
             return 0
-        place_codes, regions = load_places(session)
-        if not place_codes:
-            print("no places seeded; run migrations first")
+        team_codes, scopes = load_teams(session)
+        if not team_codes:
+            print("no teams seeded; run migrations first")
             return 0
 
         pending = stories_needing_categories(session, args.limit)
@@ -322,13 +323,13 @@ def main() -> int:
 
         tagged = skipped = 0
         # Union across the run, not per story: a code the curated list is
-        # missing shows up on every story about that country, and one line
+        # missing shows up on every story about that team, and one line
         # at the end is what makes the gap actionable.
         unknown: set[str] = set()
         for story_id, title in pending:
             body = build_input(session, story_id, title)
             try:
-                tags = classify(client, catalog, place_codes, regions, body)
+                tags = classify(client, catalog, team_codes, scopes, body)
             except RateLimitError:
                 # Stop the run, not just this story. The next one resumes
                 # exactly here because nothing below got a row.
@@ -361,7 +362,7 @@ def main() -> int:
                 continue
 
             unknown.update(tags.dropped)
-            shown = f"{','.join(tags.categories)} @ {','.join(tags.places) or '-'}"
+            shown = f"{','.join(tags.categories)} @ {','.join(tags.teams) or '-'}"
             if args.dry_run:
                 # Counted here too, or the summary reads "would tag 0" after
                 # printing a screen of tags it would have written.
@@ -376,7 +377,7 @@ def main() -> int:
                     {"sid": story_id},
                 )
                 session.execute(
-                    text("delete from story_places where story_id = :sid"),
+                    text("delete from story_teams where story_id = :sid"),
                     {"sid": story_id},
                 )
                 for rank, slug in enumerate(tags.categories):
@@ -389,12 +390,12 @@ def main() -> int:
                         """),
                         {"sid": story_id, "slug": slug, "rank": rank},
                     )
-                for rank, code in enumerate(tags.places):
+                for rank, code in enumerate(tags.teams):
                     session.execute(
                         text("""
-                            insert into story_places (story_id, place_code, rank)
+                            insert into story_teams (story_id, team_code, rank)
                             values (:sid, :code, :rank)
-                            on conflict (story_id, place_code) do nothing
+                            on conflict (story_id, team_code) do nothing
                         """),
                         {"sid": story_id, "code": code, "rank": rank},
                     )
@@ -427,10 +428,10 @@ def main() -> int:
         print(f"\n{verb} {tagged}, no category {skipped}")
         if unknown:
             print(
-                f"rejected {len(unknown)} unknown place code(s): "
+                f"rejected {len(unknown)} unknown team code(s): "
                 f"{', '.join(sorted(unknown))}\n"
                 "  Real ones are gaps in the curated list -- add with an "
-                "INSERT into places, no migration needed."
+                "INSERT into teams, no migration needed."
             )
     return 0
 

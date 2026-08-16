@@ -5,6 +5,10 @@ on:
     # Hourly. Not more often: each run wakes the database, and news RSS does
     # not move fast enough to justify the compute.
     - cron: "0 * * * *"
+    # The daily merge run, at :30 so it cannot collide with an hourly run
+    # still in flight. The merge step below keys on this exact string --
+    # change one and you must change both.
+    - cron: "30 6 * * *"
   # Lets you run this by hand from the Actions tab instead of waiting an hour
   # to find out whether it works. Do not remove.
   workflow_dispatch:
@@ -57,7 +61,21 @@ jobs:
       - name: Cluster new articles
         env:
           DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
-        run: python -m worker.cluster
+        run: python -m worker.cluster --no-merge
+
+      # Daily, not hourly. Each pass scores only stories whose centroid
+      # changed since the last one (stories.needs_merge), so a day's worth
+      # batches into one small in-database query and 23 idle passes buy
+      # nothing. Keyed on the schedule string because cron fires can start
+      # late -- gating on the clock hour would skip a delayed run. Also on
+      # manual dispatch, so a hand-run pipeline is the whole pipeline.
+      # Before summarize on purpose: a story that absorbs another this run
+      # crosses the regen growth bar this run, not tomorrow.
+      - name: Merge stories (daily)
+        if: github.event.schedule == '30 6 * * *' || github.event_name == 'workflow_dispatch'
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: python -m worker.cluster --merge-only
 
       - name: Summarize stories
         env:

@@ -175,6 +175,12 @@ class Story(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
     )
+    # Set on seed and on every centroid recompute, cleared once merge_pass
+    # has scored the story against its window. Only a pair with a changed
+    # side can score differently than it did last pass, so only those pairs
+    # are scored -- this flag is what keeps the daily merge from re-reading
+    # the whole corpus.
+    needs_merge: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Generated summary (milestone 5). All nullable: unsummarized is the
     # normal state, not an error, and `title` above keeps the seed-article
@@ -359,55 +365,56 @@ class StoryCategory(Base):
     __table_args__ = (Index("ix_story_categories_slug", "category_slug", "story_id"),)
 
 
-class Place(Base):
-    """Where a story happens. Reference data, seeded by the migration.
+class Team(Base):
+    """Who a story is about. Reference data, seeded by the migration.
 
-    Holds three kinds in one table -- 'country', 'region' and 'global' -- so
-    a story that spans a continent still gets a place rather than falling
-    through to nothing. Region codes are longer than two characters, so a
-    code's length distinguishes it from an ISO 3166-1 alpha-2 country
-    without reading `kind`.
+    Holds three kinds in one table -- 'team', 'conference' and 'league' -- so
+    a story about the CBA or an expansion vote still gets tagged rather than
+    falling through to nothing. Team codes are three characters and the other
+    two kinds are longer, so a code's length distinguishes them without
+    reading `kind`.
 
-    The country list is curated rather than the full ISO 249. Adding one is
-    an INSERT, not a migration, because code is the primary key.
+    Adding a team is an INSERT, not a migration, because code is the primary
+    key -- which is also how a second league gets added later.
     """
 
-    __tablename__ = "places"
+    __tablename__ = "teams"
 
     code: Mapped[str] = mapped_column(String(8), primary_key=True)
     name: Mapped[str] = mapped_column(String(64))
-    kind: Mapped[str] = mapped_column(String(8))
+    kind: Mapped[str] = mapped_column(String(12))
     sort_order: Mapped[int] = mapped_column(SmallInteger)
 
 
-class StoryPlace(Base):
-    """Where a story happens. Same shape as StoryCategory, same reasons.
+class StoryTeam(Base):
+    """Which teams a story concerns. Same shape as StoryCategory.
 
     Separate from story_categories rather than one polymorphic tag table:
     the two are validated differently -- categories against a list the model
-    is shown, places against one it is not -- and a tab query for either
-    should never have to filter out the other kind.
+    is shown, teams against one it is not -- and a team tab should never have
+    to filter out category rows.
     """
 
-    __tablename__ = "story_places"
+    __tablename__ = "story_teams"
 
     story_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),
         ForeignKey("stories.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    place_code: Mapped[str] = mapped_column(
-        String(8), ForeignKey("places.code"), primary_key=True
+    team_code: Mapped[str] = mapped_column(
+        String(8), ForeignKey("teams.code"), primary_key=True
     )
-    # 0 is the primary place -- where the story mostly happens.
+    # 0 is the primary team -- whose story it mostly is. In a trade, the side
+    # the reporting leads with.
     rank: Mapped[int] = mapped_column(SmallInteger, default=0)
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
     )
 
     # Mirrors ix_story_categories_slug: the PK leads with story_id, so
-    # "every story in India" needs the columns the other way round.
-    __table_args__ = (Index("ix_story_places_code", "place_code", "story_id"),)
+    # "every story about the Lakers" needs the columns the other way round.
+    __table_args__ = (Index("ix_story_teams_code", "team_code", "story_id"),)
 
 
 class Comment(Base):

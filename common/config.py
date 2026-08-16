@@ -118,18 +118,21 @@ CATEGORY_MODEL: str = os.environ.get("CATEGORY_MODEL", "llama-3.1-8b-instant")
 # would leave most of the feed untagged.
 CATEGORY_MIN_OUTLETS: int = int(os.environ.get("CATEGORY_MIN_OUTLETS", "2"))
 CATEGORY_BATCH_LIMIT: int = int(os.environ.get("CATEGORY_BATCH_LIMIT", "60"))
-# Two, because a story tagged with more than a quarter of an eight-item
+# Two, because a story tagged with more than a quarter of a seven-item
 # taxonomy stops being discriminated by its tags at all.
 CATEGORY_MAX: int = int(os.environ.get("CATEGORY_MAX", "2"))
 # 8b-instant allows 30 req/min; 2s keeps a wide margin without dragging out
 # a 60-story batch.
 CATEGORY_PACE_SECONDS: float = float(os.environ.get("CATEGORY_PACE_SECONDS", "2"))
-# Places are assigned by the same call as categories -- same evidence, and a
+# Teams are assigned by the same call as categories -- same evidence, and a
 # second request would double the rate-limit cost to answer a question the
-# model has already read the input for. Two covers the genuinely bilateral
-# story (US-China trade talks); a third is nearly always a supporting cast
-# member rather than somewhere the story is about.
-PLACE_MAX: int = int(os.environ.get("PLACE_MAX", "2"))
+# model has already read the input for.
+#
+# THREE, where categories get two. A trade has two sides by definition, so a
+# cap of two leaves no room for the third club that so often routes salary,
+# and three-team deals are common enough that truncating one would quietly
+# drop a team from its own trade. Categories have no equivalent case.
+TEAM_MAX: int = int(os.environ.get("TEAM_MAX", "3"))
 # Re-tag once a story has grown this much since it was last tagged. Mirrors
 # SUMMARY_REGEN_GROWTH, and matters far more now that merge_pass actually
 # merges: a story that absorbs another is describing a different member set

@@ -1,28 +1,24 @@
-"""category descriptions, and us-politics becomes politics
+"""category descriptions
 
 Revision ID: 0012
 Revises: 0011
 
-Two fixes to one root cause. The prompt sent the model eight bare labels and
-nothing else, so "Culture" meant whatever an 8B model decided it meant on each
-call -- it filed a UK by-election there because the candidate wears a bin, and
-a Kennedy Center board fight because the words name an arts venue. A category
-with no written boundary gets matched on surface nouns.
+A bare label is not enough for a small model. In the general-news build this
+table shipped eight one-word labels and nothing else, and "Culture" came to
+mean whatever the model guessed per call -- it filed a UK by-election there
+because the candidate wears a bin costume. A category with no written
+boundary gets matched on surface nouns.
 
-The rename is the second half. 73% of this corpus comes from non-US outlets
-and the four largest are Indian, British, British and Australian, so a
-us-politics bucket left Indian, Australian and UK politics with nowhere to go
--- which is the other reason the by-election ended up in culture. One politics
-category covering any country fits the corpus; a US/global split would make
-the US a special case at 27% of it, and a global-politics slug would overlap
-world closely enough that a small model coin-flips between them.
+Basketball has the same trap in a different shape. "Trades" and "Free Agency"
+are one blurred idea to a model that has not been told a sign-and-trade is a
+trade, and almost every trade story mentions injuries. So each description
+below says what the category EXCLUDES, not just what it covers.
 
-story_categories is cleared rather than migrated. category_slug has no ON
-UPDATE CASCADE so the rename could not carry its rows anyway, and the new
-descriptions change how borderline stories classify, so tags written under the
-old prompt are not worth preserving. They are derived data: `make categorize`
-regenerates them for one small-model call each.
+story_categories is cleared because the descriptions change how borderline
+stories classify; tags written before them are not worth keeping. They are
+derived data -- `make categorize` regenerates each for one small-model call.
 """
+
 
 import sqlalchemy as sa
 
@@ -37,35 +33,48 @@ depends_on = None
 # part of a description here is what it EXCLUDES. The culture line ends the
 # way it does because of the Kennedy Center case specifically.
 _DESCRIPTIONS = [
-    ("world", "World", "International affairs, conflict, diplomacy, disasters."),
     (
-        "politics",
-        "Politics",
-        "Elections, parties, legislatures, government and public policy, in any country.",
-    ),
-    ("business", "Business & Economy", "Companies, markets, trade, jobs, the economy."),
-    (
-        "technology",
-        "Technology",
-        "Software, hardware, AI, telecoms, and the companies building them.",
+        "games",
+        "Games",
+        "Results, recaps, series, standings and previews of scheduled games.",
     ),
     (
-        "science-health",
-        "Science & Health",
-        "Research, space, climate science, medicine, public health.",
-    ),
-    (
-        "crime-justice",
-        "Crime & Justice",
-        "Crimes, investigations, trials, courts, policing.",
-    ),
-    ("sports", "Sports", "Competition, athletes, clubs, results."),
-    (
-        "culture",
-        "Culture",
+        "trades",
+        "Trades",
         (
-            "Film, TV, music, books, art, celebrity, media. Not politics that "
-            "happens to involve an arts institution."
+            "Completed or reported trades, buyouts and waivers. A sign-and-trade "
+            "is a trade. Rumours count."
+        ),
+    ),
+    (
+        "free-agency",
+        "Free Agency",
+        "Signings, extensions, options and contract disputes. Not trades.",
+    ),
+    (
+        "injuries",
+        "Injuries",
+        (
+            "Injury, recovery, surgery, load management. Only when the injury "
+            "is the story, not when a game recap mentions one."
+        ),
+    ),
+    (
+        "draft",
+        "Draft",
+        "Prospects, lottery, draft night, two-way and G League call-ups.",
+    ),
+    (
+        "business",
+        "Business",
+        "Ownership, the CBA, media rights, expansion, arenas, sponsorship.",
+    ),
+    (
+        "off-court",
+        "Off Court",
+        (
+            "Legal matters, league discipline, personal news. Not on-court "
+            "incidents during a game."
         ),
     ),
 ]
@@ -74,10 +83,7 @@ _DESCRIPTIONS = [
 def upgrade() -> None:
     op.add_column("categories", sa.Column("description", sa.String(200), nullable=True))
 
-    # Order matters: the FK on category_slug has no ON UPDATE CASCADE, so
-    # nothing may reference us-politics when it is renamed.
     op.execute("delete from story_categories")
-    op.execute("update categories set slug = 'politics' where slug = 'us-politics'")
 
     for slug, label, description in _DESCRIPTIONS:
         op.execute(
@@ -94,6 +100,4 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("delete from story_categories")
-    op.execute("update categories set slug = 'us-politics' where slug = 'politics'")
-    op.execute("update categories set label = 'US Politics' where slug = 'us-politics'")
     op.drop_column("categories", "description")
