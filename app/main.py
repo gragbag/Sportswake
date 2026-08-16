@@ -52,7 +52,7 @@ from common.models import (
 engine = make_engine(serverless=True)
 Session = make_session_factory(engine)
 
-app = FastAPI(title="Presswake")
+app = FastAPI(title="Sportswake")
 
 STYLE = """
 :root { color-scheme: light dark; }
@@ -192,6 +192,33 @@ def api_categories() -> list[dict]:
     return [{"slug": r.slug, "label": r.label, "count": r.n} for r in rows]
 
 
+@app.get("/api/teams")
+def api_teams() -> list[dict]:
+    """The team selector, with a count of stories for each.
+
+    No eligibility subquery like /api/categories carries: teams are assigned
+    by the same classify call as categories, and that call is gated on the
+    same 2+ outlet floor the feed uses -- so every tagged story is
+    feed-visible by construction.
+
+    Ordered by sort_order, which puts LEAGUE/EAST/WEST first and the 30
+    clubs after; `kind` is what the frontend groups on.
+    """
+    with Session() as session:
+        rows = session.execute(
+            text("""
+                select t.code, t.name, t.kind, count(st.story_id) as n
+                from teams t
+                left join story_teams st on st.team_code = t.code
+                group by t.code
+                order by t.sort_order
+            """)
+        ).all()
+    return [
+        {"code": r.code, "name": r.name, "kind": r.kind, "count": r.n} for r in rows
+    ]
+
+
 SPARK_BUCKETS = 10
 
 # The select list every card needs. Shared so the feed and the favorites list
@@ -245,6 +272,24 @@ def _attach_members(session, rows) -> list[dict]:
             {"slug": slug, "label": label}
         )
 
+    # Same again for teams: rank 0 is the primary team -- whose story it
+    # mostly is, the side the reporting leads with in a trade.
+    team_rows = session.execute(
+        text("""
+            select st.story_id, st.team_code, t.name
+            from story_teams st
+            join teams t on t.code = st.team_code
+            where st.story_id in :ids
+            order by st.rank
+        """).bindparams(bindparam("ids", expanding=True)),
+        {"ids": [r.id for r in rows]},
+    ).all()
+    teams_by_story: dict[str, list[dict]] = {}
+    for story_id, code, name in team_rows:
+        teams_by_story.setdefault(str(story_id), []).append(
+            {"code": code, "name": name}
+        )
+
     by_story: dict[str, list] = {}
     for story_id, outlet, when in members:
         by_story.setdefault(str(story_id), []).append((outlet, when))
@@ -279,32 +324,47 @@ def _attach_members(session, rows) -> list[dict]:
                 "outlets": seen,
                 "buckets": buckets,
                 "categories": cats_by_story.get(str(row.id), []),
+                "teams": teams_by_story.get(str(row.id), []),
             }
         )
     return out
 
 
 @app.get("/api/stories")
-def api_stories(limit: int = 24, category: str | None = None) -> list[dict]:
+def api_stories(
+    limit: int = 24, category: str | None = None, team: str | None = None
+) -> list[dict]:
     """Stories worth rendering, most-covered first.
 
     Singletons are excluded here, not from the corpus -- they are what supports
     "only one outlet covered this", so they stay in the database and stay out
     of the feed.
 
-    `category` filters to one tab. It joins story_categories directly rather
-    than going via the categories table, which is why the slug is that
-    table's primary key.
+    `category` and `team` each filter via their own tag table, and they
+    compose: /t/LAL + /c/trades is "Lakers trade stories". Both are bound
+    parameters, never interpolated -- the f-string only ever assembles
+    fixed SQL fragments.
     """
     with Session() as session:
         filter_sql = ""
+        params: dict = {"limit": limit}
         if category:
-            filter_sql = """
+            filter_sql += """
                 and exists (
                     select 1 from story_categories sc
                     where sc.story_id = s.id and sc.category_slug = :category
                 )
             """
+            params["category"] = category
+        if team:
+            filter_sql += """
+                and exists (
+                    select 1 from story_teams st
+                    where st.story_id = s.id and st.team_code = :team
+                )
+            """
+            # Codes are stored uppercase; tolerate a hand-typed /t/lal.
+            params["team"] = team.upper()
         rows = session.execute(
             text(f"""
                 select {_CARD_COLUMNS}
@@ -318,7 +378,7 @@ def api_stories(limit: int = 24, category: str | None = None) -> list[dict]:
                     a.effective_at) desc
                 limit :limit
             """),
-            {"limit": limit, "category": category} if category else {"limit": limit},
+            params,
         ).all()
         return _attach_members(session, rows)
 
@@ -1165,6 +1225,17 @@ def api_story(story_id: str) -> dict:
             {"sid": story_id},
         ).all()
 
+        teams = session.execute(
+            text("""
+                select st.team_code as code, t.name
+                from story_teams st
+                join teams t on t.code = st.team_code
+                where st.story_id = :sid
+                order by st.rank
+            """),
+            {"sid": story_id},
+        ).all()
+
     span = (row.last_at - row.first_at).total_seconds()
     return {
         "id": str(row.id),
@@ -1182,6 +1253,7 @@ def api_story(story_id: str) -> dict:
         "last_at": row.last_at.isoformat(),
         "span_hours": round(span / 3600, 1),
         "categories": [{"slug": c.slug, "label": c.label} for c in categories],
+        "teams": [{"code": t.code, "name": t.name} for t in teams],
         "articles": [
             {
                 "outlet": a.outlet,
@@ -1212,6 +1284,8 @@ if _DIST.is_dir():
         "/app/settings",
         "/app/u/{handle}",
         "/app/c/{category}",
+        "/app/t/{team}",
+        "/app/t/{team}/c/{category}",
     ]
 
     def _serve_index() -> str:

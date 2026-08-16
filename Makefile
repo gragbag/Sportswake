@@ -60,6 +60,9 @@ db-refresh:
 	  "$$(grep -E '^DATABASE_URL=' .env | cut -d= -f2-)"
 
 # ---- pipeline (local by default; PROD=1 for Supabase) ------------------
+ingest:
+	$(DB) $(VENV)/python -m worker.ingest
+
 embed:
 	$(DB) $(VENV)/python -m worker.embed
 

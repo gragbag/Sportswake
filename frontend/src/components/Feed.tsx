@@ -2,16 +2,18 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { CategoryTabs } from "./CategoryTabs";
 import { StoryCard } from "./StoryCard";
-import type { CategoryTab, Story } from "../types";
+import { TeamSelect } from "./TeamSelect";
+import type { CategoryTab, Story, TeamOption } from "../types";
 
 const LIMIT = 24;
 
 export function Feed() {
-  // Undefined on "/", a slug on "/c/:category". One component serves both,
-  // so the tab bar never unmounts and remounts between tabs.
-  const { category } = useParams();
+  // Both undefined on "/", either set by its route segment. One component
+  // serves every combination, so the controls never unmount between views.
+  const { category, team } = useParams();
   const [stories, setStories] = useState<Story[] | null>(null);
   const [tabs, setTabs] = useState<CategoryTab[]>([]);
+  const [teams, setTeams] = useState<TeamOption[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -19,20 +21,28 @@ export function Feed() {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(setTabs)
       .catch(() => setTabs([]));
+    fetch("/api/teams")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(setTeams)
+      .catch(() => setTeams([]));
   }, []);
 
   useEffect(() => {
     setStories(null);
-    const q = category ? `&category=${encodeURIComponent(category)}` : "";
+    const q =
+      (category ? `&category=${encodeURIComponent(category)}` : "") +
+      (team ? `&team=${encodeURIComponent(team)}` : "");
     fetch(`/api/stories?limit=${LIMIT}${q}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setStories)
       .catch((e: Error) => setError(e.message));
-  }, [category]);
+  }, [category, team]);
 
   const withTabs = (inner: React.ReactNode) => (
     <>
-      <CategoryTabs tabs={tabs} />
+      <TeamSelect teams={teams} />
+      {/* Tabs link inside the selected team, so the two filters compose. */}
+      <CategoryTabs tabs={tabs} base={team ? `/t/${team}` : ""} />
       {inner}
     </>
   );
@@ -54,8 +64,8 @@ export function Feed() {
   if (stories.length === 0) {
     return withTabs(
       <p className="text-sm text-ink-500 dark:text-white/50">
-        {category
-          ? "Nothing in this category yet."
+        {category || team
+          ? "Nothing here yet."
           : "No multi-outlet stories yet. Run make recluster."}
       </p>,
     );

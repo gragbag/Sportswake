@@ -3,6 +3,15 @@ export type Category = { slug: string; label: string };
 /** A tab: a category plus how many feed-eligible stories it holds. */
 export type CategoryTab = Category & { count: number };
 
+/** A team tag on a story: LAL / Los Angeles Lakers. */
+export type Team = { code: string; name: string };
+
+/**
+ * A selector entry. `kind` is 'team' for the 30 clubs, 'conference' for
+ * EAST/WEST, 'league' for LEAGUE -- the dropdown groups on it.
+ */
+export type TeamOption = Team & { kind: string; count: number };
+
 export type Story = {
   id: string;
   /** Seed-article headline. Fallback when no summary has been generated. */
@@ -22,6 +31,8 @@ export type Story = {
   buckets: number[];
   /** Ordered by rank -- element 0 is the primary label. Empty is normal. */
   categories: Category[];
+  /** Ordered by rank -- element 0 is whose story it mostly is. Empty is normal. */
+  teams: Team[];
 };
 
 export type Profile = {
@@ -105,6 +116,8 @@ export type StoryDetail = {
   span_hours: number;
   /** Rank-ordered, same shape as Story.categories. Empty is normal. */
   categories: Category[];
+  /** Rank-ordered, same shape as Story.teams. Empty is normal. */
+  teams: Team[];
   /** Chronological, oldest first. */
   articles: StoryArticle[];
 };

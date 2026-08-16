@@ -11,7 +11,14 @@ import type { CategoryTab } from "../types";
  * Empty tabs are hidden rather than shown at zero: a tab that leads nowhere
  * reads as broken, and an untagged corpus would render eight of them.
  */
-export function CategoryTabs({ tabs }: { tabs: CategoryTab[] }) {
+export function CategoryTabs({
+  tabs,
+  base = "",
+}: {
+  tabs: CategoryTab[];
+  /** Route prefix ("" or "/t/LAL") so tabs stay inside the selected team. */
+  base?: string;
+}) {
   const populated = tabs.filter((t) => t.count > 0);
   if (populated.length === 0) return null;
 
@@ -27,11 +34,11 @@ export function CategoryTabs({ tabs }: { tabs: CategoryTab[] }) {
     // rows on a narrow screen stops reading as a single control.
     <nav className="mb-6 flex gap-5 overflow-x-auto border-b border-ink-200 dark:border-white/10">
       {/* `end` so "All" is only active on the bare path, not every child. */}
-      <NavLink to="/" end className={cls}>
+      <NavLink to={base || "/"} end className={cls}>
         All
       </NavLink>
       {populated.map((t) => (
-        <NavLink key={t.slug} to={`/c/${t.slug}`} className={cls}>
+        <NavLink key={t.slug} to={`${base}/c/${t.slug}`} className={cls}>
           {t.label}
           <span className="ml-1.5 tabular-nums text-ink-500 dark:text-white/30">
             {t.count}

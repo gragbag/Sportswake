@@ -67,12 +67,12 @@ export default function App() {
           <div>
             <Link to="/" className="inline-block">
               <h1 className="text-2xl font-semibold text-ink-900 dark:text-white">
-                Presswake
+                Sportswake
               </h1>
             </Link>
             <p className="mt-1 text-sm text-ink-500 dark:text-white/50">
-              How every outlet covered the same story &mdash; who published,
-              when, and who didn&rsquo;t.
+              How every outlet covered the same NBA story &mdash; who
+              published, when, and who didn&rsquo;t.
             </p>
           </div>
           <HeaderAuth />
@@ -81,6 +81,9 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Feed />} />
           <Route path="/c/:category" element={<Feed />} />
+          {/* Team and category compose; every combination is one Feed. */}
+          <Route path="/t/:team" element={<Feed />} />
+          <Route path="/t/:team/c/:category" element={<Feed />} />
           <Route path="/story/:storyId" element={<StoryPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/settings" element={<SettingsPage />} />

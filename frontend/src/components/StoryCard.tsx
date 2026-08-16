@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { CategoryPills } from "./CategoryPills";
+import { TeamPills } from "./TeamPills";
 import { FavoriteButton } from "./FavoriteButton";
 import { Sparkline } from "./Sparkline";
 import { timeAgo } from "../lib/time";
@@ -46,7 +47,13 @@ export function StoryCard({ story }: { story: Story }) {
         <FavoriteButton storyId={story.id} />
       </div>
 
-      <CategoryPills categories={story.categories} className="-mb-1" />
+      {/* One row, teams leading: who it's about, then what kind it is. */}
+      {(story.teams.length > 0 || story.categories.length > 0) && (
+        <div className="-mb-1 flex flex-wrap items-center gap-1">
+          <TeamPills teams={story.teams} />
+          <CategoryPills categories={story.categories} />
+        </div>
+      )}
 
       {/* Generated headline when we have one; the seed article's otherwise.
           The AI label is non-negotiable: generated text is always marked. */}

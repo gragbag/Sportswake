@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CategoryPills } from "./CategoryPills";
+import { TeamPills } from "./TeamPills";
 import { CommentThread } from "./CommentThread";
 import { FavoriteButton } from "./FavoriteButton";
 import type { StoryArticle, StoryDetail } from "../types";
@@ -106,7 +107,12 @@ export function StoryPage() {
 
           {/* Above the headline, matching the card, so a story looks the same
               whether you meet it in the feed or here. */}
-          <CategoryPills categories={story.categories} className="mt-3" />
+          {(story.teams.length > 0 || story.categories.length > 0) && (
+            <div className="mt-3 flex flex-wrap items-center gap-1">
+              <TeamPills teams={story.teams} />
+              <CategoryPills categories={story.categories} />
+            </div>
+          )}
 
           <div className="mt-2 flex items-start gap-3">
             <h1 className="text-2xl font-semibold leading-tight text-ink-900 dark:text-white">
