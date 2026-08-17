@@ -41,6 +41,7 @@ from common.config import (
     TEAM_MAX,
 )
 from common.models import make_engine, make_session_factory
+from worker.embed import strip_html
 
 # "JSON" must appear literally -- Groq's json_object mode rejects the
 # request otherwise.
@@ -52,12 +53,13 @@ Choose categories from exactly this list:
 {catalog}
 
 Also say WHICH TEAMS the story is about, as "teams":
-  - a team, as its standard three-letter code (LAL, BOS, GSW, NYK)
-  - or one of these when no single team is the subject:
+  - the team's name, written the way people write it: "Phoenix Suns",
+    "Indiana Pacers", "Golden State Warriors"
+  - or one of these exactly, when no single team is the subject:
 {scopes}
 
 Reply with JSON only:
-  {{"categories": ["slug", ...], "teams": ["code", ...]}}
+  {{"categories": ["slug", ...], "teams": ["code", ...], "is_rumor": true}}
 
 Give ONE category, and a second only when the story is genuinely both --
 a trade that clears cap space is trades and free-agency; a game recap is
@@ -67,6 +69,18 @@ Teams work differently: name EVERY team the story is actually about, up to
 {max_n}. A trade has two sides and both belong. A game involves both clubs.
 Use LEAGUE only for genuinely league-wide news -- the CBA, expansion, media
 rights -- never as a fallback when you are unsure.
+
+Only name a team the text actually supports. If the story never says which
+team a player is on, leave it out rather than recalling it -- rosters change
+and yours may be out of date.
+
+Set "is_rumor" true when the story reports speculation rather than settled
+fact -- talks, interest, a deal someone MAY make, anything attributed to
+sources about what might happen. Set it false when the thing has actually
+happened: a completed trade, a signed contract, a played game. "Lakers agree
+to deal" is false; "Lakers exploring a deal" is true. A brief must name the
+outlet and mark the item as reporting when this is true, so when the story is
+genuinely between the two, say true.
 
 Use the slugs and codes exactly as written. Prefer an empty list over
 forcing a choice.
@@ -112,7 +126,9 @@ def load_teams(session) -> tuple[set[str], list[str]]:
     )
 
 
-def stories_needing_categories(session, limit: int) -> list[tuple[str, str]]:
+def stories_needing_categories(
+    session, limit: int, retag: bool = False
+) -> list[tuple[str, str]]:
     """(story_id, title) for feed-eligible stories whose tags need writing.
 
     Three ways in, and the middle one is the reason this is not simply "has
@@ -141,7 +157,8 @@ def stories_needing_categories(session, limit: int) -> list[tuple[str, str]]:
                      s.category_attempts
             having count(distinct a.outlet_id) >= :min_outlets
                and (
-                     s.categorized_outlet_count is null
+                     :retag
+                     or s.categorized_outlet_count is null
                      or count(distinct a.outlet_id)
                         >= s.categorized_outlet_count * :growth
                      or (s.categorized_at is null
@@ -155,21 +172,39 @@ def stories_needing_categories(session, limit: int) -> list[tuple[str, str]]:
             "growth": CATEGORY_REGEN_GROWTH,
             "max_attempts": CATEGORY_MAX_ATTEMPTS,
             "limit": limit,
+            "retag": retag,
         },
     ).all()
     return [(r.id, r.title) for r in rows]
 
 
-def build_input(session, story_id: str, title: str) -> str:
-    """Headline plus a few outlet headlines. Small on purpose.
+# Enough to carry the team, not enough to carry the article. A team is named
+# in the first sentence essentially always -- "Indiana Pacers guard Tyrese
+# Haliburton said..." -- so this buys the evidence without paying for the
+# whole body.
+_LEDE_CHARS = 300
 
-    One headline per outlet is enough signal to place a story in a taxonomy
-    of eight; sending thirty would cost ten times the tokens to answer the
-    same question.
+
+def build_input(session, story_id: str, title: str) -> str:
+    """Headline and opening line from each outlet, one per outlet.
+
+    THE LEDE IS NOT OPTIONAL, and it used to be. This function originally
+    sent headlines only, sized when the single question was "which of eight
+    categories?" -- for which a headline genuinely is enough. Teams arrived
+    later (0013) and reused the same input without anyone re-asking whether
+    it carried the evidence, and it does not: measured over 71 real tags, the
+    team is named in the headlines 59% of the time and in headline+lede 72%.
+
+    That gap is not academic. Eight outlets covered Tyrese Haliburton over
+    three days without once naming his team in a headline -- their readers
+    already know -- so the model had nothing to read and filled the hole from
+    training data, tagging the story SAC because Sacramento drafted him in
+    2020 and traded him in 2022. Every one of those articles said "Pacers" in
+    its lede. We were throwing the answer away before the model saw it.
     """
     rows = session.execute(
         text("""
-            select distinct on (a.outlet_id) o.name, a.headline
+            select distinct on (a.outlet_id) o.name, a.headline, a.lede
             from story_members sm
             join articles a on a.id = sm.article_id
             join outlets o on o.id = a.outlet_id
@@ -179,7 +214,17 @@ def build_input(session, story_id: str, title: str) -> str:
         """),
         {"sid": story_id},
     ).all()
-    lines = [f"{r.name}: {r.headline}" for r in rows]
+
+    lines = []
+    for r in rows:
+        # Ledes are RSS descriptions and arrive as HTML. strip_html is the
+        # canonical cleaner in this pipeline -- the embedder and summarizer
+        # both use it, so all three see the same text.
+        lede = strip_html(r.lede or "").strip().replace("\n", " ")
+        if lede:
+            lines.append(f"{r.name}: {r.headline} -- {lede[:_LEDE_CHARS]}")
+        else:
+            lines.append(f"{r.name}: {r.headline}")
     return f"{title}\n\n" + "\n".join(lines)
 
 
@@ -197,6 +242,10 @@ class Tags(NamedTuple):
     categories: list[str]
     teams: list[str]
     dropped: list[str]
+    # Speculation rather than settled fact. Decides whether a brief presents
+    # the item as reporting and names the outlet, so it is an editorial rule
+    # carried as a boolean.
+    is_rumor: bool = False
 
 
 _TEAM_ALIASES = {
@@ -206,7 +255,76 @@ _TEAM_ALIASES = {
     # Basketball-Reference's own code for Brooklyn.
     "NO": "NOP", "NOH": "NOP", "PHO": "PHX", "BRK": "BKN",
     "GS": "GSW", "SA": "SAS", "NY": "NYK", "UTAH": "UTA", "WSH": "WAS",
+    # Right team, wrong token -- measured, not hypothetical.
+    "SUN": "PHX", "CAVS": "CLE", "SIXERS": "PHI", "76ERS": "PHI",
+    "BLAZERS": "POR", "WOLVES": "MIN", "MAVS": "DAL", "NUGS": "DEN",
+    # Names that are correct in the world but not what this table calls the
+    # club. The Clippers are seeded as "LA Clippers" -- their own branding --
+    # so a model writing the full city name was being rejected as unknown.
+    # This is the cost of asking for names instead of codes, and it is a much
+    # cheaper failure than the one it replaced: a rejected name is visible in
+    # the run output, whereas a wrong code silently tagged the wrong team.
+    "LOS ANGELES CLIPPERS": "LAC", "L.A. CLIPPERS": "LAC",
+    "LA LAKERS": "LAL", "L.A. LAKERS": "LAL",
 }
+
+
+def team_aliases(session) -> dict[str, str]:
+    """Every string the model might plausibly return -> our canonical code.
+
+    Built from the teams table rather than hardcoded, so adding a club stays
+    an INSERT and not a code change.
+
+    This exists because of a measured failure mode: the model reads basketball
+    correctly and writes abbreviations badly. Asked for a code it returned SAS
+    for a story whose text says "Phoenix Suns" three times, and on a later run
+    it offered SUN -- right team, wrong token, both times. Asked for a NAME it
+    says "Phoenix Suns", and turning that into PHX becomes a lookup we control
+    rather than a guess it makes. Codes are still accepted coming in, because
+    a model that volunteers PHX should not be punished for being right.
+    """
+    # Keyed lower throughout, including the hardcoded half: _pick tries the
+    # raw string then the folded one, so a single lowercase table serves both
+    # "Phoenix Suns" and a volunteered "PHX".
+    out: dict[str, str] = {k.lower(): v for k, v in _TEAM_ALIASES.items()}
+    for code, name in session.execute(text("select code, name from teams")):
+        words = name.split()
+        keys = {code, name, words[-1]}
+        if len(words) > 1:
+            keys.add(" ".join(words[:-1]))  # Phoenix, Golden State, New York
+        if len(words) > 2:
+            keys.add(" ".join(words[-2:]))  # Trail Blazers, City Thunder
+            # The bare city, which the two-part split above misses for
+            # "Portland Trail Blazers". Length-gated so "New" does not become
+            # a key -- New York and New Orleans would collide on it and the
+            # last row loaded would silently win.
+            if len(words[0]) >= 5:
+                keys.add(words[0])
+        for key in keys:
+            out[key.strip().lower()] = code
+    return out
+
+
+def _rumor(value: object) -> bool:
+    """Read is_rumor tolerantly, defaulting to false.
+
+    Models return a JSON boolean here almost always, but sometimes the string
+    "true". Both are accepted; anything else means the field did not arrive.
+
+    Absent defaults to FALSE rather than true, which is the less obvious
+    choice -- mislabelling a rumour as fact is the more dangerous direction.
+    The reason is that the field is part of a required schema, so absence is
+    rare, while defaulting to true would mark ordinary confirmed news as
+    "reported" often enough to dilute the label until it carries no
+    information at all. A warning that fires constantly is not a warning. The
+    prompt does the real work by telling the model to answer true whenever the
+    story genuinely sits between the two.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "yes", "1")
+    return False
 
 
 def _pick(
@@ -234,7 +352,11 @@ def _pick(
             continue
         value = item.strip()
         if aliases:
-            value = aliases.get(value, value)
+            # Exact first, then case-folded: the alias table is keyed lower
+            # because the model now returns names ("Phoenix Suns"), while the
+            # codes it sometimes still volunteers are upper. One lookup can
+            # not serve both without normalising here.
+            value = aliases.get(value) or aliases.get(value.lower()) or value
         if value in valid:
             if value not in kept:
                 kept.append(value)
@@ -249,6 +371,7 @@ def classify(
     team_codes: set[str],
     scopes: list[str],
     body: str,
+    aliases: dict[str, str] | None = None,
 ) -> Tags | None:
     """Valid slugs and team codes in rank order, or None if nothing landed.
 
@@ -261,8 +384,10 @@ def classify(
     resp = client.chat.completions.create(
         model=CATEGORY_MODEL,
         temperature=0,
-        # Up from 60: the reply carries a second list now.
-        max_tokens=100,
+        # 60 -> 100 when the reply gained a second list, 100 -> 120 when it
+        # gained is_rumor. Cheap headroom: a truncated reply is unparseable
+        # JSON, which costs the whole story's tags.
+        max_tokens=120,
         response_format={"type": "json_object"},
         messages=[
             {
@@ -286,17 +411,26 @@ def classify(
 
     cats, _ = _pick(data.get("categories"), set(catalog), CATEGORY_MAX)
     teams, dropped = _pick(
-        data.get("teams"), team_codes, TEAM_MAX, aliases=_TEAM_ALIASES
+        data.get("teams"), team_codes, TEAM_MAX, aliases=aliases or _TEAM_ALIASES
     )
     if not cats and not teams:
         return None
-    return Tags(cats, teams, dropped)
+    return Tags(cats, teams, dropped, _rumor(data.get("is_rumor")))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int, default=CATEGORY_BATCH_LIMIT)
+    parser.add_argument(
+        "--retag",
+        action="store_true",
+        help=(
+            "Re-tag stories that are already tagged. For after a prompt or "
+            "input change: the normal eligibility rules only re-queue a story "
+            "that grew, so improvements never reach the existing corpus."
+        ),
+    )
     args = parser.parse_args()
 
     client = get_client()
@@ -317,9 +451,11 @@ def main() -> int:
         if not team_codes:
             print("no teams seeded; run migrations first")
             return 0
+        aliases = team_aliases(session)
 
-        pending = stories_needing_categories(session, args.limit)
-        print(f"{len(pending)} stories need categories")
+        pending = stories_needing_categories(session, args.limit, args.retag)
+        verb = "will be re-tagged" if args.retag else "need categories"
+        print(f"{len(pending)} stories {verb}")
 
         tagged = skipped = 0
         # Union across the run, not per story: a code the curated list is
@@ -329,7 +465,7 @@ def main() -> int:
         for story_id, title in pending:
             body = build_input(session, story_id, title)
             try:
-                tags = classify(client, catalog, team_codes, scopes, body)
+                tags = classify(client, catalog, team_codes, scopes, body, aliases)
             except RateLimitError:
                 # Stop the run, not just this story. The next one resumes
                 # exactly here because nothing below got a row.
@@ -362,7 +498,11 @@ def main() -> int:
                 continue
 
             unknown.update(tags.dropped)
-            shown = f"{','.join(tags.categories)} @ {','.join(tags.teams) or '-'}"
+            rumor_mark = " [rumor]" if tags.is_rumor else ""
+            shown = (
+                f"{','.join(tags.categories)} @ "
+                f"{','.join(tags.teams) or '-'}{rumor_mark}"
+            )
             if args.dry_run:
                 # Counted here too, or the summary reads "would tag 0" after
                 # printing a screen of tags it would have written.
@@ -393,11 +533,21 @@ def main() -> int:
                 for rank, code in enumerate(tags.teams):
                     session.execute(
                         text("""
-                            insert into story_teams (story_id, team_code, rank)
-                            values (:sid, :code, :rank)
+                            insert into story_teams
+                                (story_id, team_code, rank, relevance)
+                            values (:sid, :code, :rank, :relevance)
                             on conflict (story_id, team_code) do nothing
                         """),
-                        {"sid": story_id, "code": code, "rank": rank},
+                        {
+                            "sid": story_id,
+                            "code": code,
+                            "rank": rank,
+                            # Derived from the order the model returned rather
+                            # than asked of it as a number -- models score
+                            # their own confidence badly, and rank is free.
+                            # A section sorts its stories by this.
+                            "relevance": 1.0 / (rank + 1),
+                        },
                     )
                 # Records that this story WAS tagged and at what size, which
                 # is what stories_needing_categories reads to decide whether
@@ -408,6 +558,7 @@ def main() -> int:
                         update stories
                            set categorized_at = now(),
                                category_attempts = 0,
+                               is_rumor = :is_rumor,
                                categorized_outlet_count = (
                                    select count(distinct a.outlet_id)
                                      from story_members sm
@@ -415,7 +566,7 @@ def main() -> int:
                                     where sm.story_id = :sid)
                          where id = :sid
                     """),
-                    {"sid": story_id},
+                    {"sid": story_id, "is_rumor": tags.is_rumor},
                 )
                 # One commit for the lot, so a story is never left half-tagged
                 # or tagged-but-unrecorded.

@@ -4,7 +4,7 @@
 .PHONY: check lint types migrations imports fmt db-up db-migrate db-refresh \
         embed cluster report recluster ingest branch eval \
         api web web-build summarize summarize-dry moderate \
-        categorize categorize-dry evict
+        categorize categorize-dry evict scores importance
 
 VENV     := .venv/bin
 LOCAL_DB := postgresql://postgres:postgres@localhost:5432/presswake
@@ -30,7 +30,7 @@ lint:
 	$(VENV)/ruff check .
 
 imports:
-	$(VENV)/python -c "import common.models, worker.ingest, worker.summarize, worker.moderate, worker.categorize, app.main"
+	$(VENV)/python -c "import common.models, worker.ingest, worker.summarize, worker.moderate, worker.categorize, worker.scores, worker.importance, app.main"
 
 types:
 	$(VENV)/mypy common worker app
@@ -113,6 +113,18 @@ evict:
 # Resolve comments that could not be classified when they were posted.
 moderate:
 	$(DB) $(VENV)/python -m worker.moderate
+
+# ---- briefs -------------------------------------------------------------
+# Poll the scores provider. Needs BALLDONTLIE_API_KEY; without one it prints
+# a skip and exits 0, so it is safe to leave in any pipeline.
+scores:
+	$(DB) $(VENV)/python -m worker.scores
+
+# Recompute story importance. Pure arithmetic, no LLM, safe to run anytime.
+# --report prints the distribution, which is how IMPORTANCE_THRESHOLD should
+# be set -- read the numbers, do not guess at the constant.
+importance:
+	$(DB) $(VENV)/python -m worker.importance --report
 
 # ---- frontend ----------------------------------------------------------
 api:

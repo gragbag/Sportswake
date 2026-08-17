@@ -143,6 +143,210 @@ CATEGORY_REGEN_GROWTH: float = float(os.environ.get("CATEGORY_REGEN_GROWTH", "1.
 CATEGORY_MAX_ATTEMPTS: int = int(os.environ.get("CATEGORY_MAX_ATTEMPTS", "3"))
 
 
+# ---- importance ----------------------------------------------------------
+# What decides whether a story is worth a brief at all, and how much room it
+# earns. Computed arithmetic, never an LLM judgement: a model asked how
+# important its own story is will inflate, every time.
+#
+# The four weights sum to 1.0 and EVERY TERM IS BOUNDED TO 0-1 BEFORE
+# WEIGHTING, so the composite needs no rescaling and -- critically -- means a
+# score is comparable across time. Rolling min-max normalization was rejected
+# for exactly this: its denominator moves whenever a bigger story lands, which
+# retroactively rescales old scores and quietly invalidates the trailing
+# percentile the major-story override depends on.
+IMPORTANCE_W_SOURCES: float = float(os.environ.get("IMPORTANCE_W_SOURCES", "0.35"))
+IMPORTANCE_W_RECENCY: float = float(os.environ.get("IMPORTANCE_W_RECENCY", "0.30"))
+IMPORTANCE_W_AUTHORITY: float = float(os.environ.get("IMPORTANCE_W_AUTHORITY", "0.20"))
+IMPORTANCE_W_GAME: float = float(os.environ.get("IMPORTANCE_W_GAME", "0.15"))
+# Outlet count at which the corroboration term saturates. Beyond this, more
+# coverage stops being evidence -- the difference between 15 outlets and 25 is
+# not the difference between 2 and 12.
+IMPORTANCE_SOURCE_SATURATION: int = int(
+    os.environ.get("IMPORTANCE_SOURCE_SATURATION", "15")
+)
+# Its OWN sigma, deliberately not TIME_DECAY_SIGMA_HOURS (72). Reusing the
+# clustering constant would couple two unrelated questions: "can a new article
+# still join this story" and "has this story stopped being brief-worthy". A
+# story stays clusterable far longer than it stays news.
+IMPORTANCE_DECAY_SIGMA_HOURS: int = int(
+    os.environ.get("IMPORTANCE_DECAY_SIGMA_HOURS", "18")
+)
+# Eligibility floor for any brief. Absolute, on a scale that is stable across
+# time -- unlike MAJOR_STORY_PERCENTILE, which is relative by design. Both
+# kinds of gate can coexist only because the underlying score is comparable,
+# which is what the bounded-terms rule above buys.
+#
+# 0.55, set from the measured distribution rather than picked. Over a 271-story
+# window the corpus ran min 0.16 / median 0.41 / max 0.85, and the candidate
+# cuts were:
+#     >= 0.35   172 stories      >= 0.55    25 stories
+#     >= 0.45    83 stories      >= 0.60    14 stories
+#     >= 0.50    45 stories      >= 0.65     9 stories
+#
+# 0.35 sat almost exactly on the median, which is not a significance filter --
+# it admitted "Former LeBron James teammate reveals why he didn't return to
+# Cleveland": ONE outlet, an aggregator at 0.35 authority, qualifying purely
+# because it was 16 hours old. Recency is weighted 0.30 and decays slowly
+# enough over a day that freshness alone carried a single-source item over the
+# line. That is precisely the padding the product is supposed to refuse.
+#
+# At 0.55 a lone aggregator story cannot qualify at any age (its ceiling is
+# 0.46 without a linked game), while a single ESPN report on a real game still
+# can. ~25 stories per four days is roughly six a day, which is a league
+# section plus a few team sections -- the intended shape.
+#
+# NOTE this floor is ABSOLUTE while news volume is seasonal. It was tuned in
+# August, the quietest month of the calendar; in-season the same cut will admit
+# considerably more, which is correct (more real news happens) but means it
+# should be re-read against a February corpus before being trusted.
+IMPORTANCE_THRESHOLD: float = float(os.environ.get("IMPORTANCE_THRESHOLD", "0.55"))
+# How far back a run recomputes. NOT a dirty flag like needs_merge: recency
+# decays with the wall clock and no write occurs, so a flag would freeze every
+# idle story's score at whatever it was when its last member arrived. Matches
+# cluster.py's RETIRE_AFTER_DAYS rather than inventing a new horizon; past it,
+# at sigma 18h, the decay term is already numerically negligible.
+IMPORTANCE_RECOMPUTE_WINDOW_DAYS: int = int(
+    os.environ.get("IMPORTANCE_RECOMPUTE_WINDOW_DAYS", "4")
+)
+
+
+# ---- briefs --------------------------------------------------------------
+# Sections are generated PER TEAM, never per user: one league section plus one
+# per team with qualifying news, so a slot costs at most 31 generations no
+# matter how many people read it. A reader's brief is assembled from those
+# rows at read time. Ten thousand Lakers fans consume one generation, and
+# following twelve teams consumes none.
+#
+# A SEPARATE MODEL FROM SUMMARY_MODEL, deliberately, and this must stay true.
+# Groq's limits are per model, and summarize.py aborts its ENTIRE run on a
+# rate-limit error. If briefs shared gpt-oss-120b, a burst at 08:00 ET could
+# exhaust the pool and silently stall that hour's summarization for the rest
+# of the day -- with categorize unaffected and nothing in either workflow's
+# logs pointing at the cause. Two independently-scheduled workflows must not
+# share one budget.
+BRIEF_MODEL: str = os.environ.get("BRIEF_MODEL", "llama-3.3-70b-versatile")
+BRIEF_BASE_URL: str = os.environ.get("BRIEF_BASE_URL", SUMMARY_BASE_URL)
+BRIEF_PACE_SECONDS: float = float(os.environ.get("BRIEF_PACE_SECONDS", "3"))
+
+# Targets, not laws. A slow day produces a shorter brief; padding to reach a
+# number is the failure this product is trying to avoid.
+BRIEF_WORDS_MORNING: int = int(os.environ.get("BRIEF_WORDS_MORNING", "300"))
+BRIEF_WORDS_MIDDAY: int = int(os.environ.get("BRIEF_WORDS_MIDDAY", "100"))
+BRIEF_WORDS_NIGHT: int = int(os.environ.get("BRIEF_WORDS_NIGHT", "800"))
+
+# Ceilings on the major-story expansion, per slot. A 100-word midday brief is
+# allowed to become 600 when a superstar is traded; it is not allowed to
+# become 2000.
+BRIEF_EXPANSION_MORNING: int = int(os.environ.get("BRIEF_EXPANSION_MORNING", "300"))
+BRIEF_EXPANSION_MIDDAY: int = int(os.environ.get("BRIEF_EXPANSION_MIDDAY", "500"))
+BRIEF_EXPANSION_NIGHT: int = int(os.environ.get("BRIEF_EXPANSION_NIGHT", "500"))
+
+# Extra words must be EARNED BY EXTRA FACTS, never by elaboration. A section
+# on a major story should read denser, not more florid -- so the budget is a
+# function of counted facts, and the model never learns why its number is
+# what it is.
+WORDS_PER_FACT: int = int(os.environ.get("WORDS_PER_FACT", "25"))
+WORDS_PER_EXTRA_CLUSTER: int = int(os.environ.get("WORDS_PER_EXTRA_CLUSTER", "40"))
+# Facts the base word count already pays for; expansion starts above this.
+BASELINE_FACTS_INCLUDED: int = int(os.environ.get("BASELINE_FACTS_INCLUDED", "4"))
+
+# The major-story gate. RELATIVE, never an absolute source count: coverage
+# volume swings enormously across the calendar, so eight outlets on one story
+# is extraordinary in late August and unremarkable during the Finals. A fixed
+# number would fire constantly in May and never in September.
+MAJOR_STORY_PERCENTILE: float = float(os.environ.get("MAJOR_STORY_PERCENTILE", "0.97"))
+IMPORTANCE_ROLLING_WINDOW_DAYS: int = int(
+    os.environ.get("IMPORTANCE_ROLLING_WINDOW_DAYS", "30")
+)
+
+BRIEF_MAX_CLUSTERS_PER_SECTION: int = int(
+    os.environ.get("BRIEF_MAX_CLUSTERS_PER_SECTION", "12")
+)
+# Rendered sections per slot, at READ time. Generation is uncapped at 31; this
+# is what keeps a brief readable for someone following twelve teams. Lifted
+# when a major story is present.
+BRIEF_MAX_RENDERED_SECTIONS: int = int(
+    os.environ.get("BRIEF_MAX_RENDERED_SECTIONS", "6")
+)
+# Reject and retry once past this multiple of the budget. Without a hard
+# check nothing stops an 800-word budget returning 1,400 words, which makes
+# the whole fact-counted budget advisory.
+BRIEF_OVERRUN_FACTOR: float = float(os.environ.get("BRIEF_OVERRUN_FACTOR", "1.5"))
+
+# Everything is decided in Eastern because the NBA calendar is. Display is
+# anchored to the reader's own clock; generation never is.
+BRIEF_TZ: str = os.environ.get("BRIEF_TZ", "America/New_York")
+MORNING_SLOT_ET_HOUR: int = int(os.environ.get("MORNING_SLOT_ET_HOUR", "8"))
+MIDDAY_SLOT_ET_HOUR: int = int(os.environ.get("MIDDAY_SLOT_ET_HOUR", "14"))
+# Wait after the last game goes final, so reaction pieces land in the feeds
+# before the night brief reads them.
+NIGHT_POST_FINAL_WAIT_MINUTES: int = int(
+    os.environ.get("NIGHT_POST_FINAL_WAIT_MINUTES", "30")
+)
+NIGHT_FALLBACK_ET_HOUR: int = int(os.environ.get("NIGHT_FALLBACK_ET_HOUR", "23"))
+NIGHT_FALLBACK_ET_MINUTE: int = int(os.environ.get("NIGHT_FALLBACK_ET_MINUTE", "30"))
+# Second, independent fallback: 02:00 ET the following day. "All games final"
+# has no answer for a game that NEVER reaches final -- a stuck status, a
+# suspension, an upstream outage -- and without this a single bad status flag
+# means the night brief never fires at all, silently, for that day. The
+# product spec names only the no-games fallback; this covers the other hole.
+NIGHT_HARD_CEILING_ET_HOUR: int = int(os.environ.get("NIGHT_HARD_CEILING_ET_HOUR", "2"))
+# A three-day outage should resume with today's slots, not manufacture a
+# backlog of stale dated briefs nobody will read.
+BRIEF_MAX_BACKFILL_DAYS: int = int(os.environ.get("BRIEF_MAX_BACKFILL_DAYS", "1"))
+
+# Where the calendar is, as (month, day) -> phase. Read by the generator as
+# CONTEXT ONLY -- there is deliberately no branching on phase anywhere, because
+# the importance threshold already handles volume: draft night produces a full
+# brief and late August produces almost nothing, and both are correct without
+# special-casing.
+#
+# It exists because a model with no sense of the date invents one. Left to
+# itself it wrote "The NBA season is underway" in the middle of August, which
+# is the kind of confident background detail that is invisible until a reader
+# notices the product does not know what month it is.
+SEASON_PHASES: tuple[tuple[tuple[int, int], str], ...] = (
+    ((1, 1), "regular season"),
+    ((4, 16), "the playoffs"),
+    ((6, 26), "the draft"),
+    ((7, 1), "free agency"),
+    ((7, 11), "summer league"),
+    ((8, 1), "the off-season dead period, with no games being played"),
+    ((10, 1), "preseason"),
+    ((10, 15), "regular season"),
+)
+
+
+# ---- scores (BallDontLie) ------------------------------------------------
+# The structured layer. Every number a brief quotes comes from here, never
+# from article text -- which is the whole defence against a stale or invented
+# stat arriving through a headline. No key = games and box scores simply do
+# not update; the same "off, not broken" contract GROQ_API_KEY has, because a
+# billing lapse must not take the rest of the pipeline down with it.
+BALLDONTLIE_API_KEY: str | None = os.environ.get("BALLDONTLIE_API_KEY")
+BALLDONTLIE_BASE_URL: str = os.environ.get(
+    "BALLDONTLIE_BASE_URL", "https://api.balldontlie.io/v1"
+)
+BALLDONTLIE_TIMEOUT_SECONDS: float = float(
+    os.environ.get("BALLDONTLIE_TIMEOUT_SECONDS", "15")
+)
+# Per-player stat lines are an ALL-STAR-tier endpoint, which allows 60
+# requests per minute. One second between calls sits an order of magnitude
+# inside that without thinking about it, and a poll is a handful of requests.
+BALLDONTLIE_PACE_SECONDS: float = float(
+    os.environ.get("BALLDONTLIE_PACE_SECONDS", "1.0")
+)
+# How far back each poll re-reads. 2, not 1: a West Coast game tipping at
+# 22:30 ET finishes on the NEXT UTC day, and a provider may correct a score
+# after the fact. Re-reading is cheap and the upsert is idempotent.
+SCORES_LOOKBACK_DAYS: int = int(os.environ.get("SCORES_LOOKBACK_DAYS", "2"))
+# Tomorrow's slate, so the morning brief can say what is coming.
+SCORES_LOOKAHEAD_DAYS: int = int(os.environ.get("SCORES_LOOKAHEAD_DAYS", "1"))
+# Games per run to pull box scores for. Bounds a first run against a long
+# backlog; steady state is a dozen games a night.
+SCORES_BOX_BATCH_LIMIT: int = int(os.environ.get("SCORES_BOX_BATCH_LIMIT", "30"))
+
+
 # ---- profiles -----------------------------------------------------------
 # Renaming frees the old handle for anyone else to take, which makes rapid
 # renames an identity-swap tool. A cooldown makes that impractical without

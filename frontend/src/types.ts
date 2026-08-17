@@ -1,3 +1,60 @@
+/**
+ * One story a section drew on, collapsed across its coverage.
+ *
+ * A story, not an article: a big one carries sixteen near-identical
+ * headlines, and listing all sixteen reads as a bug. The outlet count is the
+ * corroboration signal and the lead link is the way in.
+ */
+export type BriefStory = {
+  id: string;
+  headline: string;
+  outlet_count: number;
+  first_at: string;
+  lead_outlet: string;
+  lead_url: string;
+  outlets: string[];
+};
+
+/**
+ * One pre-written piece of a brief. Written per team, never per user, and
+ * assembled at read time -- so this is what the server looked up, not what
+ * it generated for you.
+ */
+export type BriefSection = {
+  scope: "league" | "team";
+  /** Null on the league section. */
+  team: string | null;
+  team_name: string | null;
+  body_md: string;
+  word_count: number;
+  /** True when the trailing-percentile gate lifted this section's budget. */
+  is_major: boolean;
+  /** In the order the section used them, so the page matches the prose. */
+  stories: BriefStory[];
+};
+
+/** A slot that exists for this date, for the collapsed cards below the fold. */
+export type BriefSlot = {
+  slot: "morning" | "midday" | "night";
+  generated_at: string;
+  word_count: number;
+  first_line: string;
+};
+
+export type Brief = {
+  /** Null when nothing has ever been generated. */
+  slot: "morning" | "midday" | "night" | null;
+  slot_date?: string;
+  generated_at?: string | null;
+  /** True when the served slot is not today's -- say so rather than imply. */
+  is_stale: boolean;
+  sections: BriefSection[];
+  available_slots: BriefSlot[];
+  following: string[];
+  /** Followed teams whose section was dropped as redundant or over the cap. */
+  omitted_team_count: number;
+};
+
 export type Category = { slug: string; label: string };
 
 /** A tab: a category plus how many feed-eligible stories it holds. */

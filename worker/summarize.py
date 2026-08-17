@@ -53,6 +53,9 @@ Respond with a single JSON object and nothing else, with exactly these keys:
              outlets; what remains unresolved.
   "people":  full names of people central to the story, spelled exactly as
              in the input. [] if none.
+  "summary": 2 to 4 sentences of prose covering the same ground as the
+             bullets, written as continuous text rather than a list. Your own
+             sentences -- do not stitch the input's phrasing together.
 
 Rules: use only what the input states -- omit anything it does not support,
 never guess to fill a gap. If a line is clearly about something else (a
@@ -176,11 +179,21 @@ def _validate(data, input_text: str) -> dict | None:
     haystack = _fold(input_text)
     people = [p for p in people if isinstance(p, str) and _fold(p) in haystack]
 
+    # Tolerated rather than required, unlike every field above. The prose
+    # summary is the least load-bearing thing here -- the brief generator
+    # reads the BULLETS, deliberately, because discrete facts force it to
+    # compose rather than reword. Rejecting an otherwise good summary over a
+    # missing paragraph would throw away a title, a subhead and five facts,
+    # and burn a rate-limited call, to gain nothing.
+    summary = data.get("summary")
+    summary = summary.strip() if isinstance(summary, str) and summary.strip() else None
+
     return {
         "title": title.strip(),
         "subhead": subhead.strip(),
         "bullets": [b.strip() for b in bullets],
         "people": people,
+        "summary": summary,
     }
 
 
@@ -252,6 +265,7 @@ def main() -> int:
                 story.summary_subhead = data["subhead"]
                 story.summary_bullets = data["bullets"]
                 story.summary_people = data["people"]
+                story.summary_text = data["summary"]
                 story.summary_model = SUMMARY_MODEL
                 story.summarized_at = utcnow()
                 story.summarized_outlet_count = outlet_count

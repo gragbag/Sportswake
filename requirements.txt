@@ -13,3 +13,9 @@ openai==2.53.0
 # Verifies Supabase-issued JWTs. The [crypto] extra is required, not optional:
 # without it PyJWT only does HMAC, and every ES256 token fails to verify.
 pyjwt[crypto]==2.10.1
+# The IANA time zone database, for zoneinfo. Required, not belt-and-braces:
+# every brief slot is decided in US/Eastern, and stdlib zoneinfo reads the
+# SYSTEM tz database -- which Windows does not have at all, and a slim Linux
+# container often does not either. Without this, ZoneInfo("America/New_York")
+# raises at import time rather than degrading, so the whole worker dies.
+tzdata==2026.2

@@ -5,6 +5,21 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sportswake</title>
+    <!--
+      Applied before first paint, on purpose. Setting this from React would
+      run after the browser has already painted the default theme, which is a
+      visible white flash on every load for anyone who chose dark. Blocking
+      and inline is the correct trade here: it is two localStorage reads.
+    -->
+    <script>
+      try {
+        var t = localStorage.getItem("sportswake:theme");
+        if (t === "light" || t === "dark")
+          document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {
+        /* private mode: fall through to prefers-color-scheme */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

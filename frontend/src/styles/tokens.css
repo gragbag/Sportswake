@@ -1,0 +1,272 @@
+/* ---------------------------------------------------------------------------
+   Newsprint, not paper stock.
+
+   The subject is the wire service and the morning press run: datelines, slugs,
+   issue numbers, second-colour spot ink, registration marks, and the fact that
+   a brief goes stale in twenty-four hours. Every value below comes from that
+   world rather than from a UI palette.
+
+   These names are deliberately NEW names, parallel to the app's own tokens
+   (canvas, surface, label, accent) rather than replacing them: the settings
+   and auth pages still run on those, and the two systems have to coexist in
+   one bundle without either bleeding into the other.
+--------------------------------------------------------------------------- */
+@theme {
+  --color-paper: #e4e1d6;
+  --color-paper-lift: #efede4;
+
+  --color-ink: #191a17;
+  --color-ink-mute: #55574f;
+
+  --color-rule: #c2bfb2;
+
+  /* The second-colour press run. The only accent, and it appears in exactly
+     three places: the freshness rule, the unread square, and the hover/focus
+     frame. --spot-wash is the same ink laid thin, not a second colour. */
+  --color-spot: #1b39a8;
+  --color-spot-wash: #c9cfe8;
+
+  /* The alpha lives in the token, not in a bg-veil/40 modifier, because the
+     two runs need different strengths: ink at 38% isolates a sheet on light
+     newsprint, while on the night run only near-black at 62% separates two
+     surfaces that are already close together. */
+  --color-veil: rgb(25 26 23 / 0.38);
+
+  --font-plate: "Archivo", sans-serif;
+  --font-news: "Newsreader", serif;
+  --font-wire: "Martian Mono", monospace;
+}
+
+/* ---------------------------------------------------------------------------
+   The night run.
+
+   Not an inverted sheet -- the same press logic under a darkroom safelight.
+   The ground keeps its green-grey cast rather than going neutral black, the
+   ink stays warm off-white rather than pure white, and the second colour is
+   lifted only far enough to hold its own against the dark ground. Measured
+   against the light run so the two feel like one design at two settings:
+   ink 13.72:1 vs 13.35:1, muted 6.22:1 vs 5.60:1, spot 6.06:1 vs 7.30:1.
+
+   Declared as ordinary CSS, not a second @theme -- Tailwind hoists every
+   @theme block to the top level, so a nested one silently replaces the first
+   and the whole app renders one palette unconditionally. index.css documents
+   that failure at length; this file has to respect it too.
+
+   Three states, matching the app: an explicit choice stamps data-theme, and
+   the default "system" setting stamps nothing, so only the media query
+   separates light from dark there.
+--------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-paper: #1a1b18;
+    --color-paper-lift: #232420;
+
+    --color-ink: #e8e5da;
+    --color-ink-mute: #9a9c92;
+
+    --color-rule: #3a3c36;
+
+    --color-spot: #7c94f0;
+    --color-spot-wash: #2a3358;
+
+    --color-veil: rgb(0 0 0 / 0.62);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-paper: #1a1b18;
+  --color-paper-lift: #232420;
+
+  --color-ink: #e8e5da;
+  --color-ink-mute: #9a9c92;
+
+  --color-rule: #3a3c36;
+
+  --color-spot: #7c94f0;
+  --color-spot-wash: #2a3358;
+
+  --color-veil: rgb(0 0 0 / 0.62);
+}
+
+@layer components {
+  /* ---- three faces, three jobs ------------------------------------------ */
+  /* The contrast between display and utility is the whole typographic idea:
+     a compressed grotesque shouting the headline, an 11px mono muttering the
+     dateline, and nothing in between competing with either. */
+  .t-display {
+    font-family: var(--font-plate);
+    font-variation-settings: "wdth" 68, "wght" 700;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    overflow-wrap: break-word;
+  }
+
+  .t-read {
+    font-family: var(--font-news);
+    font-variation-settings: "opsz" 18;
+    font-size: 1.0625rem;
+    line-height: 1.55;
+  }
+
+  .t-wire {
+    font-family: var(--font-wire);
+    font-size: 0.6875rem;
+    line-height: 1.2;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The brief itself, at reading size. Newsreader carries an optical-size axis,
+     so running text asks for a larger opsz than the 17px standfirst does --
+     that is the axis doing its job rather than one face scaled twice. */
+  .prose-wire {
+    font-family: var(--font-news);
+    font-variation-settings: "opsz" 28;
+    font-size: 1.1875rem;
+    line-height: 1.62;
+  }
+  .prose-wire p + p {
+    margin-top: 1.05em;
+  }
+
+  /* ---- the plate -------------------------------------------------------- */
+  /* A composed press plate, not a photo well. Sized as a container so every
+     mark on it -- above all the issue number -- scales from the plate's own
+     width. That is what holds the composition together when the same
+     component renders at 1180px and again at 46% of 335px. */
+  .plate {
+    container-type: inline-size;
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    background: var(--color-paper-lift);
+  }
+
+  .plate-frame {
+    position: absolute;
+    inset: 10px;
+    border: 1px solid var(--color-rule);
+    transform-origin: left center;
+    pointer-events: none;
+  }
+
+  /* Sized so the DIGITS stand roughly 62% of the plate height, not so the font
+     size equals it -- Archivo's caps are ~0.73em, so the em box has to be
+     bigger than the mark it makes. The plate is 16:9, giving a height of
+     56.25cqi, so 0.62 x 56.25 / 0.73 lands near 48cqi.
+
+     The negative offsets are what make it crop off the left and bottom edges:
+     it is a plate number bled to trim, not a decorative background digit
+     sitting politely inside a box. */
+  .plate-numeral {
+    position: absolute;
+    left: -0.05em;
+    bottom: -0.1em;
+    font-family: var(--font-plate);
+    font-variation-settings: "wdth" 62, "wght" 700;
+    font-weight: 700;
+    font-size: 48cqi;
+    line-height: 0.74;
+    letter-spacing: -0.04em;
+    color: var(--color-spot-wash);
+    user-select: none;
+  }
+
+  /* The black pass, printed over the wash: the edition nameplate.
+     Set on the numeral's width axis rather than the page's, so it reads as
+     part of the plate -- cut from the same narrow face as the number behind
+     it -- instead of as a small copy of the headline below. Sized from the
+     plate's own width so a 46% back number gets a proportionally smaller
+     nameplate rather than the same one shrunk against a different ground. */
+  .plate-slug {
+    font-variation-settings: "wdth" 62, "wght" 700;
+    font-size: clamp(1rem, 7.2cqi, 4rem);
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  /* ---- registration marks ----------------------------------------------- */
+  /* Two hairlines crossing, straddling the trim corner. Structural, not
+     decorative: they are the reason the two colours line up. */
+  .reg-mark {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    color: var(--color-rule);
+    pointer-events: none;
+  }
+  .reg-mark::before,
+  .reg-mark::after {
+    content: "";
+    position: absolute;
+    background: currentColor;
+  }
+  .reg-mark::before {
+    left: 0;
+    top: 50%;
+    width: 12px;
+    height: 1px;
+    margin-top: -0.5px;
+  }
+  .reg-mark::after {
+    top: 0;
+    left: 50%;
+    width: 1px;
+    height: 12px;
+    margin-left: -0.5px;
+  }
+  .reg-mark-tr {
+    top: 10px;
+    right: 10px;
+    transform: translate(50%, -50%);
+  }
+  .reg-mark-br {
+    bottom: 10px;
+    right: 10px;
+    transform: translate(50%, 50%);
+  }
+
+  /* ---- the load sequence ------------------------------------------------ */
+  /* One orchestration, in press order: the rule is laid first and draws from
+     the left, the direction paper feeds; then the type drops in on top of it.
+     460ms end to end.
+
+     Declared entirely inside no-preference so that under `reduce` these rules
+     do not exist at all -- there is nothing to override, and the page paints
+     in its final state. Curve is the app's existing --ease (decelerating, no
+     overshoot); a second easing token would be a second opinion. */
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes rule-draw {
+      from {
+        transform: scaleX(0);
+      }
+      to {
+        transform: scaleX(1);
+      }
+    }
+
+    @keyframes line-rise {
+      from {
+        opacity: 0;
+        transform: translate3d(0, 8px, 0);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    .anim-rule {
+      animation: rule-draw 0.26s var(--ease) both;
+      transform-origin: left center;
+    }
+
+    .anim-line {
+      animation: line-rise 0.2s var(--ease) both;
+      animation-delay: calc(0.18s + var(--i, 0) * 0.04s);
+    }
+  }
+}

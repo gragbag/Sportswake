@@ -1,10 +1,8 @@
 import { Link, Route, Routes } from "react-router-dom";
 import { AuthForm } from "./components/AuthForm";
-import { FavoritesPage } from "./components/FavoritesPage";
-import { Feed } from "./components/Feed";
+import { BriefPage } from "./components/BriefPage";
 import { SettingsPage } from "./components/SettingsPage";
-import { StoryPage } from "./components/StoryPage";
-import { UserPage } from "./components/UserPage";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { useAuth } from "./lib/auth";
 
 function HeaderAuth() {
@@ -16,37 +14,34 @@ function HeaderAuth() {
 
   if (!email) {
     return (
-      <nav className="flex items-center gap-3 text-xs">
-        <Link to="/login" className="text-ink-500 hover:text-ink-900 dark:text-white/50 dark:hover:text-white">
+      <nav className="flex items-center gap-1">
+        <Link
+          to="/login"
+          className="t-footnote rounded-full px-3 py-1.5 font-medium text-label-2 transition-colors hover:bg-fill hover:text-label focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
           Sign in
         </Link>
         <Link
           to="/signup"
-          className="rounded bg-ink-900 px-2.5 py-1 font-medium text-white dark:bg-white dark:text-ink-900"
+          className="t-footnote rounded-full bg-accent px-3.5 py-1.5 font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
-          Create account
+          Get started
         </Link>
       </nav>
     );
   }
 
   return (
-    <nav className="flex items-center gap-3 text-xs">
-      <Link
-        to="/favorites"
-        className="text-ink-500 hover:text-ink-900 dark:text-white/50 dark:hover:text-white"
-      >
-        Saved
-      </Link>
+    <nav className="flex items-center gap-1">
       <Link
         to="/settings"
-        className="text-ink-500 hover:text-ink-900 dark:text-white/50 dark:hover:text-white"
+        className="t-footnote rounded-full px-3 py-1.5 font-medium text-label-2 transition-colors hover:bg-fill hover:text-label focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
-        {email}
+        Teams
       </Link>
       <button
         onClick={signOut}
-        className="text-ink-500 underline hover:text-ink-900 dark:text-white/50 dark:hover:text-white"
+        className="t-footnote rounded-full px-3 py-1.5 font-medium text-label-3 transition-colors hover:bg-fill hover:text-label focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
         Sign out
       </button>
@@ -54,44 +49,61 @@ function HeaderAuth() {
   );
 }
 
-export default function App() {
+/**
+ * The chrome for everything that is not the brief.
+ *
+ * Settings and auth are app screens and keep the app's surfaces: a sticky bar,
+ * rounded controls, the canvas/surface/label palette. The brief does not,
+ * which is why it is routed around this shell rather than inside it.
+ */
+function AppShell() {
   return (
-    <div className="min-h-screen bg-white font-sans dark:bg-ink-900">
-      {/* max-w + mx-auto caps the line length and centres what is left, so on
-          a wide monitor the outer whitespace is set by the window, not by
-          px-12 -- it will always dwarf the column gutter. Uncapping this is
-          the only way to make the three gaps truly equal, at the cost of a
-          much wider text column. */}
-      <div className="mx-auto max-w-6xl px-6 py-12 lg:px-12">
-        <header className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <Link to="/" className="inline-block">
-              <h1 className="text-2xl font-semibold text-ink-900 dark:text-white">
-                Sportswake
-              </h1>
-            </Link>
-            <p className="mt-1 text-sm text-ink-500 dark:text-white/50">
-              How every outlet covered the same NBA story &mdash; who
-              published, when, and who didn&rsquo;t.
-            </p>
+    <div className="min-h-screen">
+      {/* A single hairline separates the bar from the content -- no shadow,
+          no fill beyond the blur. The bar should be felt, not seen. */}
+      <header className="sticky top-0 z-40 border-b border-separator bg-canvas/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-5 sm:px-8">
+          <Link
+            to="/"
+            className="flex items-baseline gap-2 rounded focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+          >
+            <span className="t-headline tracking-tight text-label">
+              Sportswake
+            </span>
+          </Link>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <span
+              aria-hidden="true"
+              className="hidden h-4 w-px bg-separator sm:block"
+            />
+            <HeaderAuth />
           </div>
-          <HeaderAuth />
-        </header>
+        </div>
+      </header>
 
+      <div className="mx-auto max-w-5xl px-5 py-8 sm:px-8 sm:py-10">
         <Routes>
-          <Route path="/" element={<Feed />} />
-          <Route path="/c/:category" element={<Feed />} />
-          {/* Team and category compose; every combination is one Feed. */}
-          <Route path="/t/:team" element={<Feed />} />
-          <Route path="/t/:team/c/:category" element={<Feed />} />
-          <Route path="/story/:storyId" element={<StoryPage />} />
-          <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/u/:handle" element={<UserPage />} />
           <Route path="/login" element={<AuthForm mode="login" />} />
           <Route path="/signup" element={<AuthForm mode="signup" />} />
         </Routes>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  // The brief is rendered outside the shell on purpose. The shell caps content
+  // at max-w-5xl and floats a backdrop-blurred bar over the top; the brief is
+  // set on a 1180px column and its whole visual argument is that depth comes
+  // from hairlines and paper tone, never from a translucent panel. It carries
+  // its own masthead, which is where the account links and theme control live
+  // on that route.
+  return (
+    <Routes>
+      <Route path="/" element={<BriefPage />} />
+      <Route path="*" element={<AppShell />} />
+    </Routes>
   );
 }

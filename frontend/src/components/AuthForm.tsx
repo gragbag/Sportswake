@@ -65,7 +65,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
   if (!authConfigured) {
     return (
-      <div className="mx-auto max-w-sm text-sm text-ink-500 dark:text-white/50">
+      <div className="mx-auto max-w-sm text-sm text-label-2">
         <p>
           Auth is not configured. Add <code>VITE_SUPABASE_URL</code> and{" "}
           <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code>, then restart{" "}
@@ -77,13 +77,13 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
   return (
     <div className="mx-auto max-w-sm">
-      <h1 className="text-xl font-semibold text-ink-900 dark:text-white">
+      <h1 className="text-xl font-semibold text-label">
         {copy.title}
       </h1>
 
       <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-3">
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-ink-500 dark:text-white/40">
+          <span className="text-[11px] uppercase tracking-wide text-label-2">
             Email
           </span>
           <input
@@ -92,14 +92,14 @@ export function AuthForm({ mode }: { mode: Mode }) {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="rounded border border-ink-200 bg-white px-3 py-2 text-sm
-                       text-ink-900 outline-none focus:border-ink-500
-                       dark:border-white/10 dark:bg-white/5 dark:text-white"
+            className="rounded border border-separator bg-surface px-3 py-2 text-sm
+                       text-label outline-none focus:border-accent
+                       dark:border-separator dark:bg-surface-2 dark:text-white"
           />
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-ink-500 dark:text-white/40">
+          <span className="text-[11px] uppercase tracking-wide text-label-2">
             Password
           </span>
           <input
@@ -111,9 +111,9 @@ export function AuthForm({ mode }: { mode: Mode }) {
             autoComplete={mode === "signup" ? "new-password" : "current-password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="rounded border border-ink-200 bg-white px-3 py-2 text-sm
-                       text-ink-900 outline-none focus:border-ink-500
-                       dark:border-white/10 dark:bg-white/5 dark:text-white"
+            className="rounded border border-separator bg-surface px-3 py-2 text-sm
+                       text-label outline-none focus:border-accent
+                       dark:border-separator dark:bg-surface-2 dark:text-white"
           />
         </label>
 
@@ -123,7 +123,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
           </p>
         )}
         {notice && (
-          <p className="rounded border border-ink-200 p-2 text-xs text-ink-500 dark:border-white/10 dark:text-white/60">
+          <p className="rounded border border-separator p-2 text-xs text-label-2 dark:border-separator dark:text-label-2">
             {notice}
           </p>
         )}
@@ -131,14 +131,15 @@ export function AuthForm({ mode }: { mode: Mode }) {
         <button
           type="submit"
           disabled={busy}
-          className="mt-1 rounded bg-ink-900 px-3 py-2 text-sm font-medium text-white
-                     disabled:opacity-50 dark:bg-white dark:text-ink-900"
+          className="mt-1 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-white
+                     transition-opacity hover:opacity-90 disabled:opacity-40
+                     focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           {busy ? "Working…" : copy.submit}
         </button>
       </form>
 
-      <p className="mt-4 text-xs text-ink-500 dark:text-white/50">
+      <p className="mt-4 text-xs text-label-2">
         {copy.altPrompt}{" "}
         <Link to={copy.altTo} className="underline">
           {copy.altLabel}

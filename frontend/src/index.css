@@ -1,17 +1,239 @@
+/* The three press faces. This has to sit above @import "tailwindcss", not down
+   in tokens.css with the rest of the newsprint system, because that file is
+   inlined AFTER Tailwind expands and an @import is only legal at the top of a
+   sheet. In the wrong position it is not an error -- the browser just drops it
+   and every face silently falls back. Archivo carries a wdth axis and
+   Newsreader an opsz axis; both are requested as ranges so the variable fonts
+   arrive intact. */
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Martian+Mono:wght@400..700&family=Newsreader:opsz,wght@6..72,200..700&display=swap");
 @import "tailwindcss";
+@import "./styles/tokens.css";
 
-/* Tailwind v4 keeps design tokens in CSS rather than a JS config file.
-   Anything declared here becomes a utility -- --color-ink-500 gives you
-   text-ink-500, bg-ink-500, border-ink-500, and so on. */
+/* ---------------------------------------------------------------------------
+   A system, not a palette.
+
+   Colours are named for their ROLE (label, secondary label, separator, fill)
+   rather than their value, which is what lets light and dark be two settings
+   of one design instead of two designs. Greys are very slightly cool; pure
+   neutral grey reads as unconsidered on a white ground.
+
+   One accent. It appears only on selection, links and focus -- never as
+   decoration -- so its presence always means "this is interactive or this is
+   where you are".
+--------------------------------------------------------------------------- */
 @theme {
-  --color-ink-50: #f7f7f8;
-  --color-ink-200: #e5e4e7;
-  --color-ink-500: #6b6375;
-  --color-ink-900: #08060d;
+  --color-canvas: #f4f6f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #fbfcfe;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-label: #14161a;
+  --color-label-2: #5f6570;
+  --color-label-3: #949aa5;
+
+  --color-separator: #e4e8ee;
+  --color-fill: #edf1f6;
+
+  --color-accent: #2f57d8;
+  --color-accent-soft: #e9eeff;
+
+  --font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    system-ui, sans-serif;
+  /* Reserved for the brief itself. Reading a piece of writing and operating an
+     interface are different jobs, and the typeface is the clearest way to say
+     which one you are doing. */
+  --font-read: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+}
+
+/* Dark is a re-tune of the SAME tokens, declared as ordinary CSS rather than
+   a second @theme block. Tailwind hoists every @theme to the top level, so a
+   nested one does not stay inside its media query -- it silently replaces the
+   first, and the app renders one theme unconditionally. That is a quiet
+   failure worth naming, because nothing errors: you just get the wrong
+   palette for everyone.
+
+   Three states, not two. An explicit choice stamps data-theme on the root;
+   the default "system" setting stamps nothing, so only the media query
+   separates light from dark there. Each rule below covers one of those
+   cases, and the :not() guard is what lets an explicit light choice beat a
+   dark OS. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-canvas: #14161b;
+    --color-surface: #1c1f26;
+    --color-surface-2: #232730;
+
+    --color-label: #eef1f5;
+    --color-label-2: #a6adb9;
+    --color-label-3: #757d89;
+
+    --color-separator: #2f343e;
+    --color-fill: #252a33;
+
+    --color-accent: #8aa4ff;
+    --color-accent-soft: #212a45;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-canvas: #14161b;
+  --color-surface: #1c1f26;
+  --color-surface-2: #232730;
+
+  --color-label: #eef1f5;
+  --color-label-2: #a6adb9;
+  --color-label-3: #757d89;
+
+  --color-separator: #2f343e;
+  --color-fill: #252a33;
+
+  --color-accent: #8aa4ff;
+  --color-accent-soft: #212a45;
 }
 
 html {
   color-scheme: light dark;
+  -webkit-text-size-adjust: 100%;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-label);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- type scale -------------------------------------------------------- */
+/* Fixed steps, used everywhere. Ad-hoc sizes are what make an interface feel
+   assembled rather than designed. */
+.t-large-title {
+  font-size: clamp(1.9rem, 4.2vw, 2.25rem);
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+}
+.t-title {
+  font-size: 1.3125rem;
+  line-height: 1.25;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+.t-headline {
+  font-size: 1.0625rem;
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.t-body {
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  letter-spacing: -0.008em;
+}
+.t-callout {
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+}
+.t-footnote {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+.t-caption {
+  font-size: 0.6875rem;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the brief ---------------------------------------------------------- */
+.prose-brief {
+  font-family: var(--font-read);
+  font-size: 1.1875rem;
+  line-height: 1.65;
+  letter-spacing: -0.003em;
+}
+.prose-brief p + p {
+  margin-top: 1.05em;
+}
+
+/* ---- motion ------------------------------------------------------------- */
+/* One curve for everything. Decelerating, no overshoot: things arrive and
+   settle rather than bouncing. */
+:root {
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade-down {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 24px, 0) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes veil {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.anim-up {
+  animation: fade-up 0.34s var(--ease) both;
+}
+.anim-down {
+  animation: fade-down 0.34s var(--ease) both;
+}
+.anim-sheet {
+  animation: sheet-up 0.36s var(--ease) both;
+}
+.anim-veil {
+  animation: veil 0.24s linear both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

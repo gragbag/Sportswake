@@ -11,9 +11,10 @@ import html
 import re
 import sys
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse
@@ -28,6 +29,8 @@ from app.auth import current_user, optional_user
 from app.handles import derive_handle
 from app.moderation import classify
 from common.config import (
+    BRIEF_MAX_RENDERED_SECTIONS,
+    BRIEF_TZ,
     COMMENT_MAX_DEPTH,
     COMMENT_MAX_LENGTH,
     COMMENT_MAX_PER_DAY,
@@ -71,33 +74,10 @@ a { color: inherit; }
 """
 
 
-@app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    with Session() as session:
-        total = session.scalar(select(func.count()).select_from(Article))
-        recent = (
-            session.query(Article, Outlet)
-            .join(Outlet, Article.outlet_id == Outlet.id)
-            .order_by(Article.published_at.desc().nullslast())
-            .limit(25)
-            .all()
-        )
-
-    items = "".join(
-        f'<li><a href="{html.escape(a.url)}">{html.escape(a.headline)}</a><br>'
-        f"<span>{html.escape(o.name)}"
-        f"{' &middot; ' + a.published_at.strftime('%b %d, %H:%M UTC') if a.published_at else ''}"
-        f"</span></li>"
-        for a, o in recent
-    )
-
-    empty = "<p>No articles yet. Run the worker.</p>"
-
-    return f"""<!doctype html><meta charset="utf-8">
-<title>Crosscut</title><style>{STYLE}</style>
-<h1>Crosscut</h1>
-<p class="sub">{total:,} articles in the corpus &middot; <a href="/status">status</a></p>
-{f"<ol>{items}</ol>" if recent else empty}"""
+# The milestone-1 article list that used to live at "/" is gone: the React
+# brief is mounted there now. /status stays -- it is an operational surface,
+# not product, and a schedule that quietly stopped has to be visible
+# somewhere.
 
 
 @app.get("/status", response_class=HTMLResponse)
@@ -1266,26 +1246,311 @@ def api_story(story_id: str) -> dict:
     }
 
 
-# Serve the built React app, if it has been built. Mounted at /app rather than
-# "/" so the existing server-rendered pages keep working -- move it to "/" once
-# React replaces them. Must be registered last: a mount matches every path
-# beneath it, so anything declared after it would be unreachable.
+# ---- briefs ---------------------------------------------------------------
+
+
+class TeamsIn(BaseModel):
+    codes: list[str]
+
+
+def _preferred_slot(local_hour: int) -> str:
+    """Which brief a reader most likely wants, from THEIR clock.
+
+    Generation is anchored to Eastern because the NBA calendar is; display is
+    anchored to the reader. The two are deliberately separate -- a reader in
+    Los Angeles opening the app at 21:00 wants the night brief, whatever the
+    hour is in New York.
+    """
+    if 5 <= local_hour < 12:
+        return "morning"
+    if 12 <= local_hour < 18:
+        return "midday"
+    return "night"
+
+
+def _resolve_slot(session, slot: str | None, day: str | None) -> tuple | None:
+    """(slot_date, slot) to render, or None when nothing has been generated.
+
+    The league row is written for every slot even when nothing qualified, so
+    "no row" unambiguously means "not generated yet" -- which is what makes
+    falling back to an older slot correct rather than a guess.
+    """
+    if slot and day:
+        row = session.execute(
+            text("""
+                select slot_date, slot from brief_sections
+                where slot_date = :d and slot = :s and team_code = 'LEAGUE'
+            """),
+            {"d": day, "s": slot},
+        ).first()
+        if row:
+            return (row.slot_date, row.slot, False)
+
+    today = datetime.now(ZoneInfo(BRIEF_TZ)).date()
+    if slot:
+        row = session.execute(
+            text("""
+                select slot_date, slot from brief_sections
+                where slot_date = :d and slot = :s and team_code = 'LEAGUE'
+            """),
+            {"d": today, "s": slot},
+        ).first()
+        if row:
+            return (row.slot_date, row.slot, False)
+
+    # Most recently generated, whatever it is. Flagged stale so the client can
+    # say "showing last night's brief" instead of implying it is current.
+    row = session.execute(
+        text("""
+            select slot_date, slot, generated_at from brief_sections
+            where team_code = 'LEAGUE'
+            order by generated_at desc limit 1
+        """)
+    ).first()
+    if not row:
+        return None
+    return (row.slot_date, row.slot, row.slot_date != today)
+
+
+def _stories_for(session, cluster_ids: list[str]) -> dict[str, dict]:
+    """The stories behind a section, one row each rather than one per article.
+
+    Grouped deliberately. A big story carries sixteen near-identical
+    headlines, and listing all sixteen reads as a bug -- what a reader wants
+    is "Lakers sold, 16 outlets" with the option to open whoever broke it.
+    So this collapses to the story and keeps the outlet COUNT, which is the
+    corroboration signal, plus the earliest article as the way in.
+    """
+    if not cluster_ids:
+        return {}
+    rows = session.execute(
+        text("""
+            select sm.story_id,
+                   coalesce(s.summary_title, s.title) as headline,
+                   count(distinct a.outlet_id) as outlet_count,
+                   min(a.effective_at) as first_at,
+                   (array_agg(a.url order by a.effective_at))[1] as lead_url,
+                   (array_agg(o.name order by a.effective_at))[1] as lead_outlet,
+                   array_agg(distinct o.name) as outlets
+            from story_members sm
+            join stories s on s.id = sm.story_id
+            join articles a on a.id = sm.article_id
+            join outlets o on o.id = a.outlet_id
+            where sm.story_id in :ids
+            group by sm.story_id, s.summary_title, s.title
+        """).bindparams(bindparam("ids", expanding=True)),
+        {"ids": cluster_ids},
+    ).all()
+    return {
+        str(r.story_id): {
+            "id": str(r.story_id),
+            "headline": r.headline,
+            "outlet_count": r.outlet_count,
+            "first_at": r.first_at.isoformat(),
+            "lead_outlet": r.lead_outlet,
+            "lead_url": r.lead_url,
+            "outlets": sorted(r.outlets),
+        }
+        for r in rows
+    }
+
+
+@app.get("/api/brief")
+def api_brief(
+    viewer: Annotated[dict | None, Depends(optional_user)],
+    local_hour: int = 12,
+    slot: str | None = None,
+    date: str | None = None,
+) -> dict:
+    """One reader's brief, assembled from pre-written sections.
+
+    Nothing is generated here. The league section plus the reader's followed
+    teams are looked up and ordered -- which is the whole point of generating
+    per team: ten thousand Lakers fans read one generation.
+    """
+    with Session() as session:
+        # No explicit slot means "whatever this reader should be seeing now",
+        # decided from THEIR clock -- not the server's, and not Eastern.
+        wanted = slot or _preferred_slot(local_hour)
+        resolved = _resolve_slot(session, wanted, date or None)
+        if resolved is None:
+            return {
+                "slot": None,
+                "sections": [],
+                "available_slots": [],
+                "following": [],
+                "omitted_team_count": 0,
+                "is_stale": False,
+            }
+        slot_date, chosen, is_stale = resolved
+
+        follows: list[str] = []
+        if viewer:
+            follows = [
+                r[0]
+                for r in session.execute(
+                    text("select team_code from user_teams where user_id = :u"),
+                    {"u": viewer["sub"]},
+                )
+            ]
+
+        rows = session.execute(
+            text("""
+                select b.team_code, b.scope, b.body_md, b.word_count,
+                       b.is_major, b.cluster_ids, b.generated_at, t.name
+                from brief_sections b
+                join teams t on t.code = b.team_code
+                where b.slot_date = :d and b.slot = :s
+                order by b.max_importance desc
+            """),
+            {"d": slot_date, "s": chosen},
+        ).all()
+
+        by_code = {r.team_code: r for r in rows}
+        league = by_code.get("LEAGUE")
+        # rows already arrive ordered by max_importance desc, so filtering
+        # in place keeps "the team with the biggest news first" -- which is
+        # the order the reader should get, not the order they followed in.
+        follow_set = set(follows)
+        ordered = [r for r in rows if r.team_code in follow_set]
+
+        chosen_rows = [league] if league else []
+        seen_clusters: set[str] = set(league.cluster_ids or []) if league else set()
+        omitted = 0
+        cap = BRIEF_MAX_RENDERED_SECTIONS - len(chosen_rows)
+
+        for row in ordered:
+            ids = set(row.cluster_ids or [])
+            # A team section carrying nothing the reader has not already read
+            # is noise. Sections are pre-written prose, so a story cannot be
+            # surgically removed -- dropping the whole redundant section is
+            # the honest move.
+            if ids and ids <= seen_clusters:
+                omitted += 1
+                continue
+            if len(chosen_rows) - (1 if league else 0) >= cap and not row.is_major:
+                omitted += 1
+                continue
+            chosen_rows.append(row)
+            seen_clusters |= ids
+
+        all_ids = sorted({i for r in chosen_rows for i in (r.cluster_ids or [])})
+        stories = _stories_for(session, all_ids)
+
+        sections = [
+            {
+                "scope": r.scope,
+                "team": None if r.team_code == "LEAGUE" else r.team_code,
+                "team_name": None if r.team_code == "LEAGUE" else r.name,
+                "body_md": r.body_md,
+                "word_count": r.word_count,
+                "is_major": r.is_major,
+                # One entry per STORY, not per article: the section's own
+                # cluster order is kept, so what the brief mentions first is
+                # what a reader sees first underneath it.
+                "stories": [
+                    stories[cid] for cid in (r.cluster_ids or []) if cid in stories
+                ],
+            }
+            for r in chosen_rows
+        ]
+
+        available = [
+            {
+                "slot": r.slot,
+                "generated_at": r.generated_at.isoformat(),
+                "word_count": r.word_count,
+                "first_line": (r.body_md or "").split(". ")[0][:160],
+            }
+            for r in session.execute(
+                text("""
+                    select slot, generated_at, word_count, body_md
+                    from brief_sections
+                    where slot_date = :d and team_code = 'LEAGUE'
+                """),
+                {"d": slot_date},
+            ).all()
+        ]
+
+        return {
+            "slot": chosen,
+            "slot_date": slot_date.isoformat(),
+            "generated_at": chosen_rows[0].generated_at.isoformat()
+            if chosen_rows
+            else None,
+            "is_stale": is_stale,
+            "sections": sections,
+            "available_slots": available,
+            "following": follows,
+            "omitted_team_count": omitted,
+        }
+
+
+@app.get("/api/user-teams")
+def api_user_teams(viewer: Annotated[dict, Depends(current_user)]) -> list[str]:
+    with Session() as session:
+        return [
+            r[0]
+            for r in session.execute(
+                text("""
+                    select ut.team_code from user_teams ut
+                    join teams t on t.code = ut.team_code
+                    where ut.user_id = :u order by t.sort_order
+                """),
+                {"u": viewer["sub"]},
+            )
+        ]
+
+
+@app.put("/api/user-teams")
+def api_set_user_teams(
+    body: TeamsIn, viewer: Annotated[dict, Depends(current_user)]
+) -> dict:
+    """Replace the whole follow set. No cap on how many.
+
+    Following twelve teams costs nothing to generate -- sections already exist
+    -- so the limit that keeps a brief readable belongs at render time, not
+    here.
+    """
+    codes = [c.strip().upper() for c in body.codes if c and c.strip()]
+    with Session() as session:
+        valid = {
+            r[0]
+            for r in session.execute(text("select code from teams where kind = 'team'"))
+        }
+        keep = [c for c in codes if c in valid]
+
+        session.execute(
+            text("delete from user_teams where user_id = :u"), {"u": viewer["sub"]}
+        )
+        for code in keep:
+            session.execute(
+                text("""
+                    insert into user_teams (id, user_id, team_code)
+                    values (gen_random_uuid(), :u, :c)
+                    on conflict (user_id, team_code) do nothing
+                """),
+                {"u": viewer["sub"], "c": code},
+            )
+        session.commit()
+        return {"following": keep}
+
+
+# Serve the built React app at the root: the brief IS the site now, so the
+# milestone-1 HTML page that used to live at "/" is gone. /status and /healthz
+# survive because they are operational surfaces rather than product, and both
+# are declared above this mount -- which must stay last, since a mount matches
+# every path beneath it and anything declared after would be unreachable.
 _DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 if _DIST.is_dir():
     # Every client-side route needs an entry here. StaticFiles only resolves
-    # real files, so /app/login is a 404 on hard refresh without this.
-    # Listed explicitly rather than as a catch-all so a genuinely wrong URL
-    # still 404s instead of silently rendering the app.
+    # real files, so /login is a 404 on hard refresh without this. Listed
+    # explicitly rather than as a catch-all so a genuinely wrong URL still
+    # 404s instead of silently rendering the app.
     _SPA_ROUTES = [
-        "/app/story/{story_id}",
-        "/app/login",
-        "/app/signup",
-        "/app/favorites",
-        "/app/settings",
-        "/app/u/{handle}",
-        "/app/c/{category}",
-        "/app/t/{team}",
-        "/app/t/{team}/c/{category}",
+        "/login",
+        "/signup",
+        "/settings",
     ]
 
     def _serve_index() -> str:
@@ -1296,4 +1561,4 @@ if _DIST.is_dir():
         # declaration order, and the mount would otherwise swallow these.
         app.get(_route, response_class=HTMLResponse)(_serve_index)
 
-    app.mount("/app", StaticFiles(directory=_DIST, html=True), name="frontend")
+    app.mount("/", StaticFiles(directory=_DIST, html=True), name="frontend")
