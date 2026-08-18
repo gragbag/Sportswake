@@ -191,8 +191,8 @@ export function CommentNode({
               <button
                 type="submit"
                 disabled={busy || !draft.trim()}
-                className="mt-1 rounded bg-ink-900 px-2 py-1 text-[11px] font-medium text-white
-                           disabled:opacity-40 dark:bg-white dark:text-ink-900"
+                className="mt-1 rounded bg-label px-2 py-1 text-[11px] font-medium text-surface
+                           disabled:opacity-40"
               >
                 {busy ? "Posting…" : "Reply"}
               </button>

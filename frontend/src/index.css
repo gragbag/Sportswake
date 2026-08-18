@@ -43,6 +43,33 @@
      interface are different jobs, and the typeface is the clearest way to say
      which one you are doing. */
   --font-read: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+
+  /* Legacy ink scale, mapped onto the role tokens above. The stories pages
+     (Feed, StoryPage, favorites, comments) predate this design system and
+     name their greys by value; routing them through the role variables means
+     they follow the light/dark flip for free instead of carrying a second
+     palette. New components should use the role names directly. */
+  --color-ink-0: var(--color-surface);
+  --color-ink-50: var(--color-fill);
+  --color-ink-200: var(--color-separator);
+  --color-ink-500: var(--color-label-2);
+  --color-ink-900: var(--color-label);
+}
+
+/* Make `dark:` mean what the tokens mean: the toggle wins, the OS decides
+   only when no choice was stamped. Tailwind's default dark variant is the
+   media query alone, which ignores data-theme -- so a reader on a light OS
+   who chose dark got dark variables but light `dark:` utilities. Same
+   three-state logic as the token overrides in tokens.css, deliberately. */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) & {
+      @slot;
+    }
+  }
+  :root[data-theme="dark"] & {
+    @slot;
+  }
 }
 
 /* Dark is a re-tune of the SAME tokens, declared as ordinary CSS rather than

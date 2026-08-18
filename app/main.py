@@ -1598,6 +1598,13 @@ if _DIST.is_dir():
         "/login",
         "/signup",
         "/settings",
+        "/stories",
+        "/stories/c/{category}",
+        "/stories/t/{team}",
+        "/stories/t/{team}/c/{category}",
+        "/story/{story_id}",
+        "/favorites",
+        "/u/{handle}",
     ]
 
     def _serve_index() -> str:

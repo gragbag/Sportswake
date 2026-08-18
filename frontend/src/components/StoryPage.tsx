@@ -67,7 +67,7 @@ export function StoryPage() {
     return (
       <div className="text-sm">
         <p className="text-ink-500 dark:text-white/50">Story not found ({error}).</p>
-        <Link to="/" className="mt-2 inline-block underline">
+        <Link to="/stories" className="mt-2 inline-block underline">
           Back to all stories
         </Link>
       </div>
@@ -84,7 +84,7 @@ export function StoryPage() {
   return (
     <div>
       <Link
-        to="/"
+        to="/stories"
         className="text-xs text-ink-500 hover:text-ink-900 dark:text-white/50
                    dark:hover:text-white"
       >

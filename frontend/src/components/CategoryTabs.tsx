@@ -16,7 +16,8 @@ export function CategoryTabs({
   base = "",
 }: {
   tabs: CategoryTab[];
-  /** Route prefix ("" or "/t/LAL") so tabs stay inside the selected team. */
+  /** Route prefix ("/stories" or "/stories/t/LAL") so tabs stay inside the
+   *  selected team, rooted wherever the feed lives. */
   base?: string;
 }) {
   const populated = tabs.filter((t) => t.count > 0);

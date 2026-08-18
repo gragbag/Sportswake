@@ -41,8 +41,9 @@ export function Feed() {
   const withTabs = (inner: React.ReactNode) => (
     <>
       <TeamSelect teams={teams} />
-      {/* Tabs link inside the selected team, so the two filters compose. */}
-      <CategoryTabs tabs={tabs} base={team ? `/t/${team}` : ""} />
+      {/* Tabs link inside the selected team, so the two filters compose.
+          Rooted at /stories since the brief took over "/". */}
+      <CategoryTabs tabs={tabs} base={team ? `/stories/t/${team}` : "/stories"} />
       {inner}
     </>
   );

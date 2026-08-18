@@ -29,8 +29,11 @@ export function TeamSelect({ teams }: { teams: TeamOption[] }) {
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const onChange = (code: string) => {
+    // Rooted at /stories since the brief took over "/".
     const categoryPath = category ? `/c/${category}` : "";
-    navigate(code ? `/t/${code}${categoryPath}` : categoryPath || "/");
+    navigate(
+      code ? `/stories/t/${code}${categoryPath}` : `/stories${categoryPath}`,
+    );
   };
 
   const option = (t: TeamOption) => (
@@ -40,14 +43,18 @@ export function TeamSelect({ teams }: { teams: TeamOption[] }) {
   );
 
   return (
+    // The select uses role tokens with no dark: overrides -- surface and
+    // label flip with the theme on their own. Its old classes hardcoded
+    // bg-white and used ink-900 as a DARK BACKGROUND, which broke when the
+    // legacy ink scale was remapped onto role colors: ink-900 is the label
+    // color now, and labels go light in dark mode.
     <label className="mb-4 flex items-center gap-2 text-xs text-ink-500 dark:text-white/50">
       Team
       <select
         value={team ?? ""}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded border border-ink-200 bg-white px-2 py-1 text-xs
-                   text-ink-900 dark:border-white/15 dark:bg-ink-900
-                   dark:text-white"
+        className="rounded border border-separator bg-surface px-2 py-1
+                   text-xs text-label"
       >
         <option value="">All teams</option>
         {scopes.length > 0 && (

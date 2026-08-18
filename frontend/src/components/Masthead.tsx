@@ -114,6 +114,9 @@ export function Masthead({
             {!loading &&
               (email ? (
                 <>
+                  <Link to="/stories" className={LINK}>
+                    Stories
+                  </Link>
                   <Link to="/settings" className={LINK}>
                     Teams
                   </Link>
@@ -127,6 +130,12 @@ export function Masthead({
                 </>
               ) : (
                 <>
+                  <Link to="/stories" className={LINK}>
+                    Stories
+                  </Link>
+                  <span aria-hidden="true" className="text-rule">
+                    ·
+                  </span>
                   <Link to="/login" className={LINK}>
                     Sign in
                   </Link>

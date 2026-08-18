@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 from zoneinfo import ZoneInfo
 
-from openai import OpenAI, RateLimitError
+from openai import BadRequestError, OpenAI, RateLimitError
 from sqlalchemy import bindparam, text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -499,24 +499,42 @@ def generate_section(
     body_text = render_input(clusters)
 
     for attempt in range(2):
-        resp = client.chat.completions.create(
-            model=BRIEF_MODEL,
-            temperature=0.4,
-            max_tokens=min(4000, budget * 3 + 400),
-            response_format={"type": "json_object"},
-            messages=[
-                {
-                    "role": "system",
-                    "content": _SYSTEM.format(
-                        role=_SLOT_ROLE[slot],
-                        budget=budget,
-                        today=slot_date.strftime("%A, %d %B %Y"),
-                        phase=season_phase(slot_date),
-                    ),
-                },
-                {"role": "user", "content": body_text},
-            ],
-        )
+        try:
+            resp = client.chat.completions.create(
+                model=BRIEF_MODEL,
+                temperature=0.4,
+                max_tokens=min(4000, budget * 3 + 400),
+                # qwen REASONS before it answers, and reasoning spends
+                # completion tokens: on a real prompt it burned this entire
+                # cap thinking and emitted nothing, which Groq surfaces as
+                # json_validate_failed with an EMPTY failed_generation.
+                # "none" disables thinking -- qwen accepts only
+                # none/default, not gpt-oss's low.
+                reasoning_effort="none",
+                response_format={"type": "json_object"},
+                messages=[
+                    {
+                        "role": "system",
+                        "content": _SYSTEM.format(
+                            role=_SLOT_ROLE[slot],
+                            budget=budget,
+                            today=slot_date.strftime("%A, %d %B %Y"),
+                            phase=season_phase(slot_date),
+                        ),
+                    },
+                    {"role": "user", "content": body_text},
+                ],
+            )
+        except BadRequestError:
+            # qwen sometimes ignores json_object outright and writes prose,
+            # which Groq rejects server-side as json_validate_failed. That is
+            # an invalid GENERATION, not an invalid request: same treatment
+            # as unparseable output below -- another attempt, then the
+            # section is skipped. Left uncaught it killed the whole run,
+            # and a mid-run death leaves a slot the scheduler never
+            # revisits, because the league row lands first and due_slots
+            # gates on it.
+            continue
         raw = resp.choices[0].message.content or ""
         try:
             data = json.loads(raw)

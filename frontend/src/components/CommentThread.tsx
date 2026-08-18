@@ -122,8 +122,8 @@ export function CommentThread({ storyId }: { storyId: string }) {
             <button
               type="submit"
               disabled={busy || !body.trim() || overLimit}
-              className="rounded bg-ink-900 px-3 py-1.5 text-xs font-medium text-white
-                         disabled:opacity-40 dark:bg-white dark:text-ink-900"
+              className="rounded bg-label px-3 py-1.5 text-xs font-medium text-surface
+                         disabled:opacity-40"
             >
               {busy ? "Posting…" : "Post"}
             </button>
