@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { formatClock } from "../lib/dateline";
 import { SLOT_LABEL, minutes } from "../lib/edition";
 import { Prose } from "../lib/prose";
@@ -115,29 +116,39 @@ export function Reader({
               </div>
 
               <ul className="mt-1">
+                {/* The headline goes to OUR coverage page -- who covered it,
+                    in what order, under what headline -- which is the claim
+                    this product exists to make; the outlet that broke it is
+                    the external link one step down. Two sibling anchors, not
+                    nested: a link inside a link is invalid HTML the router
+                    will not route. */}
                 {section.stories.map((story) => (
                   <li key={story.id} className="group border-t border-rule">
-                    <a
-                      href={story.lead_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block py-4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-spot"
+                    <Link
+                      to={`/story/${story.id}`}
+                      className="block pt-4 pb-1 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-spot"
                     >
                       <p className="t-read text-ink decoration-1 underline-offset-4 group-hover:underline">
                         {story.headline}
                       </p>
-                      {/* Corroboration is the signal worth surfacing: one
-                          outlet and sixteen are different claims about how real
-                          a story is. */}
-                      <p className="t-wire mt-2 text-ink-mute">
-                        {story.outlet_count}{" "}
-                        {story.outlet_count === 1 ? "outlet" : "outlets"}
-                        <span aria-hidden="true"> · </span>
-                        <span title={story.outlets.join(", ")}>
-                          {story.lead_outlet} first
-                        </span>
-                      </p>
-                    </a>
+                    </Link>
+                    {/* Corroboration is the signal worth surfacing: one
+                        outlet and sixteen are different claims about how real
+                        a story is. */}
+                    <p className="t-wire pb-4 text-ink-mute">
+                      {story.outlet_count}{" "}
+                      {story.outlet_count === 1 ? "outlet" : "outlets"}
+                      <span aria-hidden="true"> · </span>
+                      <a
+                        href={story.lead_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={story.outlets.join(", ")}
+                        className="hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
+                      >
+                        {story.lead_outlet} first ↗
+                      </a>
+                    </p>
                   </li>
                 ))}
               </ul>

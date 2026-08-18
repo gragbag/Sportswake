@@ -19,7 +19,6 @@ stories classify; tags written before them are not worth keeping. They are
 derived data -- `make categorize` regenerates each for one small-model call.
 """
 
-
 import sqlalchemy as sa
 
 from alembic import op

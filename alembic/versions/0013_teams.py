@@ -38,28 +38,40 @@ _SCOPES = [
 # the general-news build could ask for ISO country codes.
 _TEAMS = [
     # Eastern -- Atlantic
-    ("BOS", "Boston Celtics"), ("BKN", "Brooklyn Nets"),
-    ("NYK", "New York Knicks"), ("PHI", "Philadelphia 76ers"),
+    ("BOS", "Boston Celtics"),
+    ("BKN", "Brooklyn Nets"),
+    ("NYK", "New York Knicks"),
+    ("PHI", "Philadelphia 76ers"),
     ("TOR", "Toronto Raptors"),
     # Eastern -- Central
-    ("CHI", "Chicago Bulls"), ("CLE", "Cleveland Cavaliers"),
-    ("DET", "Detroit Pistons"), ("IND", "Indiana Pacers"),
+    ("CHI", "Chicago Bulls"),
+    ("CLE", "Cleveland Cavaliers"),
+    ("DET", "Detroit Pistons"),
+    ("IND", "Indiana Pacers"),
     ("MIL", "Milwaukee Bucks"),
     # Eastern -- Southeast
-    ("ATL", "Atlanta Hawks"), ("CHA", "Charlotte Hornets"),
-    ("MIA", "Miami Heat"), ("ORL", "Orlando Magic"),
+    ("ATL", "Atlanta Hawks"),
+    ("CHA", "Charlotte Hornets"),
+    ("MIA", "Miami Heat"),
+    ("ORL", "Orlando Magic"),
     ("WAS", "Washington Wizards"),
     # Western -- Northwest
-    ("DEN", "Denver Nuggets"), ("MIN", "Minnesota Timberwolves"),
-    ("OKC", "Oklahoma City Thunder"), ("POR", "Portland Trail Blazers"),
+    ("DEN", "Denver Nuggets"),
+    ("MIN", "Minnesota Timberwolves"),
+    ("OKC", "Oklahoma City Thunder"),
+    ("POR", "Portland Trail Blazers"),
     ("UTA", "Utah Jazz"),
     # Western -- Pacific
-    ("GSW", "Golden State Warriors"), ("LAC", "LA Clippers"),
-    ("LAL", "Los Angeles Lakers"), ("PHX", "Phoenix Suns"),
+    ("GSW", "Golden State Warriors"),
+    ("LAC", "LA Clippers"),
+    ("LAL", "Los Angeles Lakers"),
+    ("PHX", "Phoenix Suns"),
     ("SAC", "Sacramento Kings"),
     # Western -- Southwest
-    ("DAL", "Dallas Mavericks"), ("HOU", "Houston Rockets"),
-    ("MEM", "Memphis Grizzlies"), ("NOP", "New Orleans Pelicans"),
+    ("DAL", "Dallas Mavericks"),
+    ("HOU", "Houston Rockets"),
+    ("MEM", "Memphis Grizzlies"),
+    ("NOP", "New Orleans Pelicans"),
     ("SAS", "San Antonio Spurs"),
 ]
 

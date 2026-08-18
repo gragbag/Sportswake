@@ -312,7 +312,10 @@ def _attach_members(session, rows) -> list[dict]:
 
 @app.get("/api/stories")
 def api_stories(
-    limit: int = 24, category: str | None = None, team: str | None = None
+    limit: int = 24,
+    offset: int = 0,
+    category: str | None = None,
+    team: str | None = None,
 ) -> list[dict]:
     """Stories worth rendering, most-covered first.
 
@@ -327,7 +330,10 @@ def api_stories(
     """
     with Session() as session:
         filter_sql = ""
-        params: dict = {"limit": limit}
+        # Offset pagination is fine here: the feed is small (hundreds of
+        # eligible stories) and the ordering is stable enough between "More"
+        # clicks that a shifted row is rare and harmless.
+        params: dict = {"limit": limit, "offset": max(0, offset)}
         if category:
             filter_sql += """
                 and exists (
@@ -356,7 +362,7 @@ def api_stories(
                 having count(distinct a.outlet_id) >= 2
                 order by count(distinct a.outlet_id) desc, max(
                     a.effective_at) desc
-                limit :limit
+                limit :limit offset :offset
             """),
             params,
         ).all()
@@ -1441,9 +1447,7 @@ def api_brief(
                 seen |= ids
             return kept, omitted
 
-        slots_to_render = (
-            sorted({r.slot for r in day_rows}) if all_slots else [chosen]
-        )
+        slots_to_render = sorted({r.slot for r in day_rows}) if all_slots else [chosen]
         picked = {
             s: pick([r for r in day_rows if r.slot == s]) for s in slots_to_render
         }

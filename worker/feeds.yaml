@@ -87,12 +87,14 @@ feeds:
   - name: Yardbarker NBA
     url: https://www.yardbarker.com/rss/sport/3
 
-  # --- Team sites (pilot) ---------------------------------------------------
-  # SB Nation's per-team network -- the big-market five to start. Low volume
-  # and single-team by design: they confirm clusters on team stories, and
-  # later they power coverage gaps ("outlets that normally cover this team
-  # and didn't"). If the pilot earns its place, the other 25 clubs follow
-  # the same /rss/index.xml pattern.
+  # --- Team sites -----------------------------------------------------------
+  # SB Nation's per-team network. Started as a big-market-five pilot; the
+  # pilot measured 50-93% of their articles landing in multi-outlet stories
+  # -- the best confirmation ratios in the roster -- so the rest of the
+  # network followed. Low volume and single-team by design: they confirm
+  # clusters on team stories, and later they power coverage gaps ("outlets
+  # that normally cover this team and didn't"). Eleven of the thirty sites
+  # are dead (see rejected block); this is every one that still publishes.
 
   - name: Silver Screen and Roll
     url: https://www.silverscreenandroll.com/rss/index.xml
@@ -108,6 +110,48 @@ feeds:
 
   - name: Liberty Ballers
     url: https://www.libertyballers.com/rss/index.xml
+
+  - name: Peachtree Hoops
+    url: https://www.peachtreehoops.com/rss/index.xml
+
+  - name: NetsDaily
+    url: https://www.netsdaily.com/rss/index.xml
+
+  - name: Fear The Sword
+    url: https://www.fearthesword.com/rss/index.xml
+
+  - name: Mavs Moneyball
+    url: https://www.mavsmoneyball.com/rss/index.xml
+
+  - name: Detroit Bad Boys
+    url: https://www.detroitbadboys.com/rss/index.xml
+
+  - name: The Dream Shake
+    url: https://www.thedreamshake.com/rss/index.xml
+
+  - name: Brew Hoop
+    url: https://www.brewhoop.com/rss/index.xml
+
+  - name: Canis Hoopus
+    url: https://www.canishoopus.com/rss/index.xml
+
+  - name: Bright Side of the Sun
+    url: https://www.brightsideofthesun.com/rss/index.xml
+
+  - name: Blazer's Edge
+    url: https://www.blazersedge.com/rss/index.xml
+
+  - name: Pounding The Rock
+    url: https://www.poundingtherock.com/rss/index.xml
+
+  - name: Raptors HQ
+    url: https://www.raptorshq.com/rss/index.xml
+
+  - name: SLC Dunk
+    url: https://www.slcdunk.com/rss/index.xml
+
+  - name: Bullets Forever
+    url: https://www.bulletsforever.com/rss/index.xml
 
   # A beat NEWSPAPER, not a fan site -- the only local paper found so far
   # with working team-scoped RSS. Exactly what coverage gaps will want.
@@ -153,3 +197,10 @@ feeds:
 #   NBC Sports RSN   /feed/ has a channel header but zero items; JS-rendered
 #   theScore         /rss 404
 #   basketballnews   /rss 404
+#   SB Nation dead   11 of the 30 team sites no longer publish (probed
+#   team sites       2026-08-18): At The Hive, Blog a Bull, Denver Stiffs,
+#                    Indy Cornrows, Clips Nation, Hot Hot Hoops, The Bird
+#                    Writes all 404; Grizzly Bear Blues, Welcome to Loud
+#                    City, Orlando Pinstriped Post, Sactown Royalty do not
+#                    resolve at all. CHA CHI DEN IND LAC MEM MIA NOP OKC
+#                    ORL SAC have no team fan-site coverage as a result.

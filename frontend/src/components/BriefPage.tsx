@@ -116,8 +116,31 @@ function Skeleton() {
  * Clicking the lead opens it to read; clicking a back number brings it to the
  * front. Same component, and the meta line above each says which is which.
  */
+
+const BRIEF_CACHE_KEY = "sportswake:brief";
+
+/** The last bundle this browser saw, or null. Stale on purpose -- it paints
+ *  instantly while the fresh fetch is in flight, like yesterday's paper on
+ *  the table while today's is on the doorstep. */
+function readCachedBrief(): Brief | null {
+  try {
+    const raw = localStorage.getItem(BRIEF_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as Brief) : null;
+  } catch {
+    return null; // private mode, or a corrupt entry: fall through to the fetch
+  }
+}
+
+function saveCachedBrief(brief: Brief) {
+  try {
+    localStorage.setItem(BRIEF_CACHE_KEY, JSON.stringify(brief));
+  } catch {
+    /* private mode: caching is an optimisation, never a requirement */
+  }
+}
+
 export function BriefPage() {
-  const { session, loading } = useAuth();
+  const { session } = useAuth();
   const [brief, setBrief] = useState<Brief | null>(null);
   const [filed, setFiled] = useState<Record<string, Brief>>({});
   const [reading, setReading] = useState<BriefSection | null>(null);
@@ -145,6 +168,9 @@ export function BriefPage() {
     if (!res.ok) throw new Error(String(res.status));
     const data: Brief = await res.json();
     cache.current.set(key, data);
+    // Only the day bundle is worth keeping across visits -- it carries every
+    // edition, so the next visit paints whole before its first byte arrives.
+    if (!want) saveCachedBrief(data);
     if (data.editions) {
       for (const [s, edition] of Object.entries(data.editions)) {
         cache.current.set(s, edition);
@@ -161,11 +187,28 @@ export function BriefPage() {
     return data;
   }, []);
 
+  // First paint from the last visit's bundle, before any network at all.
+  // Editions land in both caches so the plates render fully populated.
   useEffect(() => {
-    if (loading) return;
+    const cached = readCachedBrief();
+    if (!cached) return;
+    setBrief((current) => current ?? cached);
+    if (cached.editions) {
+      for (const [s, edition] of Object.entries(cached.editions)) {
+        cache.current.set(s, edition);
+      }
+      setFiled((prev) => ({ ...cached.editions, ...prev }));
+    }
+  }, []);
+
+  useEffect(() => {
+    // Deliberately NOT gated on auth restore: an anonymous reader should
+    // never wait on a session that is not coming. A signed-in reader's
+    // first response may be the anonymous brief; this effect re-runs when
+    // the session lands and replaces it. The brief on screen -- cached or
+    // anonymous -- stays up while the replacement is in flight, which is
+    // what makes both handovers invisible.
     cache.current.clear();
-    setBrief(null);
-    setFiled({});
     setError(null);
 
     load(null)
@@ -175,7 +218,7 @@ export function BriefPage() {
         }
       })
       .catch(() => setError("Couldn’t load the brief. Check your connection."));
-  }, [session, loading, load]);
+  }, [session, load]);
 
   // "Live" is the newest edition actually filed, not the one you are looking
   // at -- so opening a back number says EARLIER rather than relabelling itself

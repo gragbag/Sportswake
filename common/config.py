@@ -75,10 +75,14 @@ SUMMARY_REGEN_GROWTH: float = float(os.environ.get("SUMMARY_REGEN_GROWTH", "1.5"
 # not the volume.
 SUMMARY_MAX_OUTLETS: int = int(os.environ.get("SUMMARY_MAX_OUTLETS", "30"))
 # Floor for summarization, NOT for display (the front page keeps showing
-# >= 2). At 5: 57 stories qualify today vs 304 at 2 -- bounds the backfill
-# to ~3 runs, and stops regen churn on tiny stories (a story summarized at
-# 2 outlets would re-summarize at 3, 5, 8 as it grows).
-SUMMARY_MIN_OUTLETS: int = int(os.environ.get("SUMMARY_MIN_OUTLETS", "5"))
+# >= 2). Lowered 5 -> 3 once the feed became a browsing surface again: at 5
+# most cards showed raw seed headlines, and half of the 2+ corpus sits at
+# exactly 2. Three is the balance -- it roughly halves the unsummarized
+# feed while still skipping the two-outlet tier, which is mostly wire-copy
+# pairs with nothing to compare, and where regen churn is worst (a story
+# summarized at 2 re-summarizes at 3, 5, 8 as it grows; from 3 the next
+# regen is ~5).
+SUMMARY_MIN_OUTLETS: int = int(os.environ.get("SUMMARY_MIN_OUTLETS", "3"))
 # Seconds between LLM calls. 8K TPM at ~2K tokens/story caps at ~4
 # stories/minute; 20s stays under it without thinking about it.
 SUMMARY_PACE_SECONDS: int = int(os.environ.get("SUMMARY_PACE_SECONDS", "20"))

@@ -253,19 +253,34 @@ _TEAM_ALIASES = {
     # Every one is a real abbreviation in circulation: NBA.com uses NOH and
     # NO for New Orleans, box scores vary between PHO and PHX, and BRK is
     # Basketball-Reference's own code for Brooklyn.
-    "NO": "NOP", "NOH": "NOP", "PHO": "PHX", "BRK": "BKN",
-    "GS": "GSW", "SA": "SAS", "NY": "NYK", "UTAH": "UTA", "WSH": "WAS",
+    "NO": "NOP",
+    "NOH": "NOP",
+    "PHO": "PHX",
+    "BRK": "BKN",
+    "GS": "GSW",
+    "SA": "SAS",
+    "NY": "NYK",
+    "UTAH": "UTA",
+    "WSH": "WAS",
     # Right team, wrong token -- measured, not hypothetical.
-    "SUN": "PHX", "CAVS": "CLE", "SIXERS": "PHI", "76ERS": "PHI",
-    "BLAZERS": "POR", "WOLVES": "MIN", "MAVS": "DAL", "NUGS": "DEN",
+    "SUN": "PHX",
+    "CAVS": "CLE",
+    "SIXERS": "PHI",
+    "76ERS": "PHI",
+    "BLAZERS": "POR",
+    "WOLVES": "MIN",
+    "MAVS": "DAL",
+    "NUGS": "DEN",
     # Names that are correct in the world but not what this table calls the
     # club. The Clippers are seeded as "LA Clippers" -- their own branding --
     # so a model writing the full city name was being rejected as unknown.
     # This is the cost of asking for names instead of codes, and it is a much
     # cheaper failure than the one it replaced: a rejected name is visible in
     # the run output, whereas a wrong code silently tagged the wrong team.
-    "LOS ANGELES CLIPPERS": "LAC", "L.A. CLIPPERS": "LAC",
-    "LA LAKERS": "LAL", "L.A. LAKERS": "LAL",
+    "LOS ANGELES CLIPPERS": "LAC",
+    "L.A. CLIPPERS": "LAC",
+    "LA LAKERS": "LAL",
+    "L.A. LAKERS": "LAL",
 }
 
 

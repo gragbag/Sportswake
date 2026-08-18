@@ -786,9 +786,7 @@ def due_slots(session, now_et: datetime | None = None) -> list[tuple[date, str]]
     horizon = today - timedelta(days=BRIEF_MAX_BACKFILL_DAYS)
     # Disabled slots are filtered here, not in the if-blocks above: the slot
     # logic stays complete, and BRIEF_SLOTS is purely an editorial valve.
-    return [
-        (d, s) for d, s in due if d >= horizon and s in BRIEF_SLOTS_ENABLED
-    ]
+    return [(d, s) for d, s in due if d >= horizon and s in BRIEF_SLOTS_ENABLED]
 
 
 def main() -> int:

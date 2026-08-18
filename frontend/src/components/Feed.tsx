@@ -1,17 +1,20 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { CategoryTabs } from "./CategoryTabs";
 import { StoryCard } from "./StoryCard";
 import { TeamSelect } from "./TeamSelect";
 import type { CategoryTab, Story, TeamOption } from "../types";
 
-const LIMIT = 24;
+/** Cards per fetch. Small first paint; "More" appends another page. */
+const PAGE = 15;
 
 export function Feed() {
   // Both undefined on "/", either set by its route segment. One component
   // serves every combination, so the controls never unmount between views.
   const { category, team } = useParams();
   const [stories, setStories] = useState<Story[] | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [tabs, setTabs] = useState<CategoryTab[]>([]);
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -27,16 +30,46 @@ export function Feed() {
       .catch(() => setTeams([]));
   }, []);
 
+  const fetchPage = useCallback(
+    (offset: number): Promise<Story[]> => {
+      const q =
+        (category ? `&category=${encodeURIComponent(category)}` : "") +
+        (team ? `&team=${encodeURIComponent(team)}` : "");
+      return fetch(`/api/stories?limit=${PAGE}&offset=${offset}${q}`).then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)),
+      );
+    },
+    [category, team],
+  );
+
   useEffect(() => {
     setStories(null);
-    const q =
-      (category ? `&category=${encodeURIComponent(category)}` : "") +
-      (team ? `&team=${encodeURIComponent(team)}` : "");
-    fetch(`/api/stories?limit=${LIMIT}${q}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then(setStories)
+    setHasMore(false);
+    fetchPage(0)
+      .then((batch) => {
+        setStories(batch);
+        // A full page probably has more behind it. When the corpus size is
+        // an exact multiple of PAGE, the reader gets one "More" click that
+        // returns nothing and quietly retires the button -- cheaper than a
+        // count query on every load.
+        setHasMore(batch.length === PAGE);
+      })
       .catch((e: Error) => setError(e.message));
-  }, [category, team]);
+  }, [fetchPage]);
+
+  async function loadMore() {
+    if (!stories) return;
+    setLoadingMore(true);
+    try {
+      const batch = await fetchPage(stories.length);
+      setStories([...stories, ...batch]);
+      setHasMore(batch.length === PAGE);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   const withTabs = (inner: React.ReactNode) => (
     <>
@@ -73,10 +106,27 @@ export function Feed() {
   }
 
   return withTabs(
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {stories.map((story) => (
-        <StoryCard key={story.id} story={story} />
-      ))}
-    </div>,
+    <>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {stories.map((story) => (
+          <StoryCard key={story.id} story={story} />
+        ))}
+      </div>
+      {hasMore && (
+        <div className="mt-6 flex justify-center">
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="rounded-full border border-ink-200 px-4 py-1.5 text-xs
+                       text-ink-500 transition-colors hover:border-ink-500/40
+                       hover:text-ink-900 disabled:opacity-50
+                       dark:border-white/15 dark:text-white/60
+                       dark:hover:text-white"
+          >
+            {loadingMore ? "Loading…" : "More stories"}
+          </button>
+        </div>
+      )}
+    </>,
   );
 }
