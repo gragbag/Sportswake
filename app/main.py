@@ -1275,41 +1275,34 @@ def _resolve_slot(session, slot: str | None, day: str | None) -> tuple | None:
     "no row" unambiguously means "not generated yet" -- which is what makes
     falling back to an older slot correct rather than a guess.
     """
-    if slot and day:
-        row = session.execute(
-            text("""
-                select slot_date, slot from brief_sections
-                where slot_date = :d and slot = :s and team_code = 'LEAGUE'
-            """),
-            {"d": day, "s": slot},
-        ).first()
-        if row:
-            return (row.slot_date, row.slot, False)
-
+    # One query where there used to be up to three, because every statement
+    # is a full round trip. The old cascade -- exact (date, slot) asked for,
+    # then that slot today, then whatever is newest -- becomes ORDER BY
+    # tiers over the same league rows. coalesce(), because comparing against
+    # a NULL parameter yields NULL, and Postgres sorts NULLs FIRST under
+    # DESC -- which would rank rows nobody asked for above real matches.
     today = datetime.now(ZoneInfo(BRIEF_TZ)).date()
-    if slot:
-        row = session.execute(
-            text("""
-                select slot_date, slot from brief_sections
-                where slot_date = :d and slot = :s and team_code = 'LEAGUE'
-            """),
-            {"d": today, "s": slot},
-        ).first()
-        if row:
-            return (row.slot_date, row.slot, False)
-
-    # Most recently generated, whatever it is. Flagged stale so the client can
-    # say "showing last night's brief" instead of implying it is current.
     row = session.execute(
         text("""
-            select slot_date, slot, generated_at from brief_sections
+            select slot_date, slot from brief_sections
             where team_code = 'LEAGUE'
-            order by generated_at desc limit 1
-        """)
+            order by coalesce(slot_date = :day and slot = :slot, false) desc,
+                     coalesce(slot_date = :today and slot = :slot, false) desc,
+                     generated_at desc
+            limit 1
+        """),
+        {"day": day, "slot": slot, "today": today},
     ).first()
     if not row:
         return None
-    return (row.slot_date, row.slot, row.slot_date != today)
+    # Stale only on the newest-fallback tier, exactly as before: a reader who
+    # explicitly opened a back number asked for that date, and today's slot
+    # is current by definition. Flagged so the client can say "showing last
+    # night's brief" instead of implying it is live.
+    exact = day is not None and row.slot_date.isoformat() == day and row.slot == slot
+    todays = row.slot_date == today and row.slot == slot
+    is_stale = not exact and not todays and row.slot_date != today
+    return (row.slot_date, row.slot, is_stale)
 
 
 def _stories_for(session, cluster_ids: list[str]) -> dict[str, dict]:
@@ -1394,17 +1387,22 @@ def api_brief(
                 )
             ]
 
-        rows = session.execute(
+        # The whole day in one query, split in Python: the chosen slot's
+        # sections and the available_slots strip used to be two statements
+        # against this same small table, and each statement is a full round
+        # trip. A day holds at most three slots of ~31 sections.
+        day_rows = session.execute(
             text("""
-                select b.team_code, b.scope, b.body_md, b.word_count,
+                select b.slot, b.team_code, b.scope, b.body_md, b.word_count,
                        b.is_major, b.cluster_ids, b.generated_at, t.name
                 from brief_sections b
                 join teams t on t.code = b.team_code
-                where b.slot_date = :d and b.slot = :s
+                where b.slot_date = :d
                 order by b.max_importance desc
             """),
-            {"d": slot_date, "s": chosen},
+            {"d": slot_date},
         ).all()
+        rows = [r for r in day_rows if r.slot == chosen]
 
         by_code = {r.team_code: r for r in rows}
         league = by_code.get("LEAGUE")
@@ -1455,6 +1453,8 @@ def api_brief(
             for r in chosen_rows
         ]
 
+        # From the same day_rows fetch as the sections -- the league row is
+        # written every slot, so it is the reliable one-per-slot marker.
         available = [
             {
                 "slot": r.slot,
@@ -1462,14 +1462,8 @@ def api_brief(
                 "word_count": r.word_count,
                 "first_line": (r.body_md or "").split(". ")[0][:160],
             }
-            for r in session.execute(
-                text("""
-                    select slot, generated_at, word_count, body_md
-                    from brief_sections
-                    where slot_date = :d and team_code = 'LEAGUE'
-                """),
-                {"d": slot_date},
-            ).all()
+            for r in day_rows
+            if r.team_code == "LEAGUE"
         ]
 
         return {
@@ -1514,26 +1508,35 @@ def api_set_user_teams(
     """
     codes = [c.strip().upper() for c in body.codes if c and c.strip()]
     with Session() as session:
-        valid = {
-            r[0]
-            for r in session.execute(text("select code from teams where kind = 'team'"))
-        }
-        keep = [c for c in codes if c in valid]
-
+        # Two statements, not one per team: this fires on every toggle in the
+        # picker, and each statement is a full round trip to the database --
+        # the loop version cost ~15 round trips for a 12-team save, over a
+        # second on a residential connection. Validation is folded into the
+        # INSERT's join against teams, and RETURNING carries back what stuck.
+        #
+        # Deliberately NOT one delete-and-insert CTE: data-modifying CTEs
+        # share a snapshot, so the INSERT cannot see the DELETE's effect and
+        # re-adding a team the reader already follows collides with the
+        # not-yet-deleted row.
         session.execute(
             text("delete from user_teams where user_id = :u"), {"u": viewer["sub"]}
         )
-        for code in keep:
-            session.execute(
+        kept = [
+            r[0]
+            for r in session.execute(
                 text("""
                     insert into user_teams (id, user_id, team_code)
-                    values (gen_random_uuid(), :u, :c)
-                    on conflict (user_id, team_code) do nothing
+                    select gen_random_uuid(), :u, t.code
+                    from teams t
+                    where t.kind = 'team'
+                      and t.code = any(cast(:codes as text[]))
+                    returning team_code
                 """),
-                {"u": viewer["sub"], "c": code},
+                {"u": viewer["sub"], "codes": codes},
             )
+        ]
         session.commit()
-        return {"following": keep}
+        return {"following": kept}
 
 
 # Serve the built React app at the root: the brief IS the site now, so the
