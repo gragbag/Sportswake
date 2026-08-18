@@ -51,6 +51,7 @@ from common.config import (
     BRIEF_MODEL,
     BRIEF_OVERRUN_FACTOR,
     BRIEF_PACE_SECONDS,
+    BRIEF_SLOTS_ENABLED,
     BRIEF_TZ,
     BRIEF_WORDS_MIDDAY,
     BRIEF_WORDS_MORNING,
@@ -765,7 +766,11 @@ def due_slots(session, now_et: datetime | None = None) -> list[tuple[date, str]]
     # A three-day outage resumes with today, rather than manufacturing a
     # backlog of stale dated briefs nobody will read.
     horizon = today - timedelta(days=BRIEF_MAX_BACKFILL_DAYS)
-    return [(d, s) for d, s in due if d >= horizon]
+    # Disabled slots are filtered here, not in the if-blocks above: the slot
+    # logic stays complete, and BRIEF_SLOTS is purely an editorial valve.
+    return [
+        (d, s) for d, s in due if d >= horizon and s in BRIEF_SLOTS_ENABLED
+    ]
 
 
 def main() -> int:
@@ -790,8 +795,12 @@ def main() -> int:
     with Session() as session:
         if args.force or args.slot:
             slot_date = date.fromisoformat(args.date) if args.date else et_now().date()
+            # An explicit --slot may name a disabled slot on purpose -- that
+            # is what makes one-off regeneration possible. Bare --force only
+            # covers the slots that actually publish.
+            enabled = [s for s in SLOTS if s in BRIEF_SLOTS_ENABLED]
             targets = [
-                (slot_date, s) for s in (SLOTS if not args.slot else [args.slot])
+                (slot_date, s) for s in (enabled if not args.slot else [args.slot])
             ]
         else:
             targets = due_slots(session)

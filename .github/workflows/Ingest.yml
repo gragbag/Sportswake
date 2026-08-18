@@ -98,6 +98,14 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python -m worker.categorize
 
+      # After categorize so fresh team tags count toward scores, and here as
+      # well as in briefs.yml so importance keeps moving even if that
+      # workflow is ever disabled. Pure arithmetic -- no key, no LLM.
+      - name: Recompute importance
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: python -m worker.importance
+
       # Retries comments the classifier could not reach when they were
       # posted. Without this, a provider outage leaves them invisible
       # forever -- which is the failure that makes moderation read as a bug.

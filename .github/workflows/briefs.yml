@@ -1,0 +1,62 @@
+name: briefs
+
+on:
+  schedule:
+    # A dumb 15-minute tick -- brief.py's due_slots() decides in Eastern time
+    # what is actually owed, because GitHub cron is UTC-only, best-effort, and
+    # routinely 30-60 minutes late. A missed tick self-heals: the next one
+    # still sees the slot missing. Offset from :00 so the first tick after a
+    # deploy never races Ingest's migration step -- this workflow deliberately
+    # runs no migrations of its own (two concurrent `alembic upgrade head`
+    # calls can race each other; Ingest.yml owns the schema).
+    - cron: "5,20,35,50 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: briefs
+  cancel-in-progress: false
+
+jobs:
+  briefs:
+    runs-on: ubuntu-latest
+    # A slot boundary can generate up to 31 sections, paced for Groq's rate
+    # limit. A rate-limit stop exits 0 and the next tick resumes.
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # requirements.txt only -- nothing here embeds, so no torch and no
+      # sentence-transformers. A tick that runs 96 times a day must stay
+      # cheap: with a warm pip cache this whole job is about a minute.
+      - run: pip install -r requirements.txt
+
+      # Numbers first: everything downstream links against games rows.
+      # Missing BALLDONTLIE_API_KEY prints a skip and exits 0 by design.
+      - name: Poll scores
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          BALLDONTLIE_API_KEY: ${{ secrets.BALLDONTLIE_API_KEY }}
+        run: python -m worker.scores
+
+      # Pure arithmetic, no LLM. Every tick, because the recency term decays
+      # with the clock -- a stale score is wrong even when nothing was written.
+      - name: Recompute importance
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: python -m worker.importance
+
+      - name: Generate due briefs
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # The editorial valve: which editions publish. Two for now --
+          # offseason news does not fill three. The machinery keeps all
+          # three slots; changing this line is the whole change.
+          BRIEF_SLOTS: morning,night
+        run: python -m worker.brief

@@ -384,10 +384,14 @@ def classify(
     resp = client.chat.completions.create(
         model=CATEGORY_MODEL,
         temperature=0,
-        # 60 -> 100 when the reply gained a second list, 100 -> 120 when it
-        # gained is_rumor. Cheap headroom: a truncated reply is unparseable
-        # JSON, which costs the whole story's tags.
-        max_tokens=120,
+        # gpt-oss models REASON before they answer, and reasoning spends
+        # completion tokens. The old cap of 120 -- sized for a Llama that
+        # answered immediately -- left nothing for the reply itself, and
+        # every call failed JSON validation with an empty generation. Low
+        # effort keeps the thinking short; 1024 is headroom, not a target
+        # (a real reply runs ~55 tokens, reasoning included).
+        max_tokens=1024,
+        reasoning_effort="low",
         response_format={"type": "json_object"},
         messages=[
             {

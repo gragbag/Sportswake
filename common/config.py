@@ -109,10 +109,11 @@ COMMENT_MAX_DEPTH: int = int(os.environ.get("COMMENT_MAX_DEPTH", "3"))
 
 # ---- categories ---------------------------------------------------------
 # The small model, deliberately: this is classification, not synthesis, and
-# Groq's limits are PER MODEL. 8b-instant has its own 14,400 req/day pool,
-# so categorising the whole backlog cannot starve summarization on
-# gpt-oss-120b.
-CATEGORY_MODEL: str = os.environ.get("CATEGORY_MODEL", "llama-3.1-8b-instant")
+# Groq's limits are PER MODEL. gpt-oss-20b has its own request pool, so
+# categorising the whole backlog cannot starve summarization on
+# gpt-oss-120b. (Was llama-3.1-8b-instant until Groq retired the Llama
+# line, 2026-08.)
+CATEGORY_MODEL: str = os.environ.get("CATEGORY_MODEL", "openai/gpt-oss-20b")
 # Every story the feed can show, not just summarized ones -- the summary
 # floor is 5 outlets, but the feed shows 2, so tying categories to summaries
 # would leave most of the feed untagged.
@@ -121,8 +122,8 @@ CATEGORY_BATCH_LIMIT: int = int(os.environ.get("CATEGORY_BATCH_LIMIT", "60"))
 # Two, because a story tagged with more than a quarter of a seven-item
 # taxonomy stops being discriminated by its tags at all.
 CATEGORY_MAX: int = int(os.environ.get("CATEGORY_MAX", "2"))
-# 8b-instant allows 30 req/min; 2s keeps a wide margin without dragging out
-# a 60-story batch.
+# 2s sits well under the small model's per-minute ceiling without dragging
+# out a 60-story batch.
 CATEGORY_PACE_SECONDS: float = float(os.environ.get("CATEGORY_PACE_SECONDS", "2"))
 # Teams are assigned by the same call as categories -- same evidence, and a
 # second request would double the rate-limit cost to answer a question the
@@ -224,7 +225,14 @@ IMPORTANCE_RECOMPUTE_WINDOW_DAYS: int = int(
 # of the day -- with categorize unaffected and nothing in either workflow's
 # logs pointing at the cause. Two independently-scheduled workflows must not
 # share one budget.
-BRIEF_MODEL: str = os.environ.get("BRIEF_MODEL", "llama-3.3-70b-versatile")
+#
+# qwen3.6-27b is the largest surviving model OUTSIDE the gpt-oss pools after
+# Groq retired the Llama line (2026-08, which took the original
+# llama-3.3-70b-versatile). It is a reasoning model that leaks <think>
+# blocks into plain completions -- but json_object mode suppresses them and
+# returns clean JSON, verified against the live API before this default
+# changed. If brief generation ever stops using json_object, re-test that.
+BRIEF_MODEL: str = os.environ.get("BRIEF_MODEL", "qwen/qwen3.6-27b")
 BRIEF_BASE_URL: str = os.environ.get("BRIEF_BASE_URL", SUMMARY_BASE_URL)
 BRIEF_PACE_SECONDS: float = float(os.environ.get("BRIEF_PACE_SECONDS", "3"))
 
@@ -276,6 +284,14 @@ BRIEF_OVERRUN_FACTOR: float = float(os.environ.get("BRIEF_OVERRUN_FACTOR", "1.5"
 # Everything is decided in Eastern because the NBA calendar is. Display is
 # anchored to the reader's own clock; generation never is.
 BRIEF_TZ: str = os.environ.get("BRIEF_TZ", "America/New_York")
+# Which editions actually publish. The full machinery knows three; how many
+# run on a given day is an editorial call that tracks news volume -- the
+# offseason does not fill three briefs -- so it lives in the environment,
+# not in code or cron. due_slots() only offers slots named here; --slot
+# --force can still generate a disabled one by hand.
+BRIEF_SLOTS_ENABLED: frozenset[str] = frozenset(
+    os.environ.get("BRIEF_SLOTS", "morning,midday,night").split(",")
+)
 MORNING_SLOT_ET_HOUR: int = int(os.environ.get("MORNING_SLOT_ET_HOUR", "8"))
 MIDDAY_SLOT_ET_HOUR: int = int(os.environ.get("MIDDAY_SLOT_ET_HOUR", "14"))
 # Wait after the last game goes final, so reaction pieces land in the feeds
@@ -385,11 +401,12 @@ MODERATION_PROVIDER: str = os.environ.get("MODERATION_PROVIDER", "openai")
 MODERATION_OPENAI_URL: str = "https://api.openai.com/v1/moderations"
 MODERATION_OPENAI_MODEL: str = "omni-moderation-latest"
 # Groq fallback. Deliberately the small model: this is classification, not
-# synthesis, and Groq's limits are PER MODEL -- 8b-instant has its own
-# 14,400 req/day pool, so comment traffic cannot starve summarization on
-# gpt-oss-120b.
+# synthesis, and Groq's limits are PER MODEL -- gpt-oss-20b's pool is
+# separate from gpt-oss-120b, so comment traffic cannot starve
+# summarization. It shares categorize's pool, exactly as the two shared
+# 8b-instant before the Llama retirement.
 MODERATION_GROQ_MODEL: str = os.environ.get(
-    "MODERATION_GROQ_MODEL", "llama-3.1-8b-instant"
+    "MODERATION_GROQ_MODEL", "openai/gpt-oss-20b"
 )
 # Short: this call sits in the comment POST path. A slow classifier should
 # park the comment for retry, not make the user wait.
