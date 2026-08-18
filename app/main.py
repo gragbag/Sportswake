@@ -1354,12 +1354,18 @@ def api_brief(
     local_hour: int = 12,
     slot: str | None = None,
     date: str | None = None,
+    all_slots: int = 0,
 ) -> dict:
     """One reader's brief, assembled from pre-written sections.
 
     Nothing is generated here. The league section plus the reader's followed
     teams are looked up and ordered -- which is the whole point of generating
     per team: ten thousand Lakers fans read one generation.
+
+    all_slots=1 bundles every edition of the day into one response under
+    `editions`, each in this same shape. The page used to fetch the other
+    two editions as background requests -- three trips reading the same
+    day_rows this handler already holds and throwing two thirds away.
     """
     with Session() as session:
         # No explicit slot means "whatever this reader should be seeing now",
@@ -1402,56 +1408,57 @@ def api_brief(
             """),
             {"d": slot_date},
         ).all()
-        rows = [r for r in day_rows if r.slot == chosen]
-
-        by_code = {r.team_code: r for r in rows}
-        league = by_code.get("LEAGUE")
-        # rows already arrive ordered by max_importance desc, so filtering
-        # in place keeps "the team with the biggest news first" -- which is
-        # the order the reader should get, not the order they followed in.
         follow_set = set(follows)
-        ordered = [r for r in rows if r.team_code in follow_set]
 
-        chosen_rows = [league] if league else []
-        seen_clusters: set[str] = set(league.cluster_ids or []) if league else set()
-        omitted = 0
-        cap = BRIEF_MAX_RENDERED_SECTIONS - len(chosen_rows)
+        def pick(slot_rows) -> tuple[list, int]:
+            """Which sections one edition shows this reader, plus the count
+            dropped. Split from rendering so every requested edition is
+            picked BEFORE one stories query hydrates them all."""
+            league = next((r for r in slot_rows if r.team_code == "LEAGUE"), None)
+            # slot_rows arrive ordered by max_importance desc, so filtering
+            # in place keeps "the team with the biggest news first" -- which
+            # is the order the reader should get, not the order they
+            # followed in.
+            ordered = [r for r in slot_rows if r.team_code in follow_set]
 
-        for row in ordered:
-            ids = set(row.cluster_ids or [])
-            # A team section carrying nothing the reader has not already read
-            # is noise. Sections are pre-written prose, so a story cannot be
-            # surgically removed -- dropping the whole redundant section is
-            # the honest move.
-            if ids and ids <= seen_clusters:
-                omitted += 1
-                continue
-            if len(chosen_rows) - (1 if league else 0) >= cap and not row.is_major:
-                omitted += 1
-                continue
-            chosen_rows.append(row)
-            seen_clusters |= ids
+            kept = [league] if league else []
+            seen: set[str] = set(league.cluster_ids or []) if league else set()
+            omitted = 0
+            cap = BRIEF_MAX_RENDERED_SECTIONS - len(kept)
+            for row in ordered:
+                ids = set(row.cluster_ids or [])
+                # A team section carrying nothing the reader has not already
+                # read is noise. Sections are pre-written prose, so a story
+                # cannot be surgically removed -- dropping the whole
+                # redundant section is the honest move.
+                if ids and ids <= seen:
+                    omitted += 1
+                    continue
+                if len(kept) - (1 if league else 0) >= cap and not row.is_major:
+                    omitted += 1
+                    continue
+                kept.append(row)
+                seen |= ids
+            return kept, omitted
 
-        all_ids = sorted({i for r in chosen_rows for i in (r.cluster_ids or [])})
-        stories = _stories_for(session, all_ids)
+        slots_to_render = (
+            sorted({r.slot for r in day_rows}) if all_slots else [chosen]
+        )
+        picked = {
+            s: pick([r for r in day_rows if r.slot == s]) for s in slots_to_render
+        }
 
-        sections = [
+        # One hydration for every edition in the response -- per-slot queries
+        # here would hand back the round trips the day_rows merge removed.
+        all_ids = sorted(
             {
-                "scope": r.scope,
-                "team": None if r.team_code == "LEAGUE" else r.team_code,
-                "team_name": None if r.team_code == "LEAGUE" else r.name,
-                "body_md": r.body_md,
-                "word_count": r.word_count,
-                "is_major": r.is_major,
-                # One entry per STORY, not per article: the section's own
-                # cluster order is kept, so what the brief mentions first is
-                # what a reader sees first underneath it.
-                "stories": [
-                    stories[cid] for cid in (r.cluster_ids or []) if cid in stories
-                ],
+                i
+                for kept, _ in picked.values()
+                for r in kept
+                for i in (r.cluster_ids or [])
             }
-            for r in chosen_rows
-        ]
+        )
+        stories = _stories_for(session, all_ids)
 
         # From the same day_rows fetch as the sections -- the league row is
         # written every slot, so it is the reliable one-per-slot marker.
@@ -1466,18 +1473,55 @@ def api_brief(
             if r.team_code == "LEAGUE"
         ]
 
-        return {
-            "slot": chosen,
-            "slot_date": slot_date.isoformat(),
-            "generated_at": chosen_rows[0].generated_at.isoformat()
-            if chosen_rows
-            else None,
-            "is_stale": is_stale,
-            "sections": sections,
-            "available_slots": available,
-            "following": follows,
-            "omitted_team_count": omitted,
+        def render(slot_name: str, kept: list, omitted: int, stale: bool) -> dict:
+            return {
+                "slot": slot_name,
+                "slot_date": slot_date.isoformat(),
+                "generated_at": kept[0].generated_at.isoformat() if kept else None,
+                "is_stale": stale,
+                "sections": [
+                    {
+                        "scope": r.scope,
+                        "team": None if r.team_code == "LEAGUE" else r.team_code,
+                        "team_name": None if r.team_code == "LEAGUE" else r.name,
+                        "body_md": r.body_md,
+                        "word_count": r.word_count,
+                        "is_major": r.is_major,
+                        # One entry per STORY, not per article: the section's
+                        # own cluster order is kept, so what the brief
+                        # mentions first is what a reader sees first
+                        # underneath it.
+                        "stories": [
+                            stories[cid]
+                            for cid in (r.cluster_ids or [])
+                            if cid in stories
+                        ],
+                    }
+                    for r in kept
+                ],
+                "available_slots": available,
+                "following": follows,
+                "omitted_team_count": omitted,
+            }
+
+        today = datetime.now(ZoneInfo(BRIEF_TZ)).date()
+        editions = {
+            s: render(
+                s,
+                *picked[s],
+                # The resolved slot keeps _resolve_slot's verdict; its
+                # siblings share the day, so staleness is just "not today".
+                is_stale if s == chosen else slot_date != today,
+            )
+            for s in slots_to_render
         }
+
+        # A COPY, or the response would contain itself: editions[chosen] is
+        # also the body, and JSON has no cycles.
+        body = dict(editions[chosen])
+        if all_slots:
+            body["editions"] = editions
+        return body
 
 
 @app.get("/api/user-teams")

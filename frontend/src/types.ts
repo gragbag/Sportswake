@@ -53,6 +53,13 @@ export type Brief = {
   following: string[];
   /** Followed teams whose section was dropped as redundant or over the cap. */
   omitted_team_count: number;
+  /**
+   * Every edition of the day, keyed by slot, each in this same shape.
+   * Present only when the request asked for all_slots=1 -- the initial page
+   * load does, so sibling editions arrive with the first response instead
+   * of as background fetches.
+   */
+  editions?: Record<string, Brief>;
 };
 
 export type Category = { slug: string; label: string };

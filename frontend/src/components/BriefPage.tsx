@@ -137,15 +137,24 @@ export function BriefPage() {
     }
     const q = new URLSearchParams({ local_hour: String(new Date().getHours()) });
     if (want) q.set("slot", want);
+    // The auto request asks for the whole day in one response; the sibling
+    // editions land in the cache below, so the background loads that used to
+    // fetch them become instant cache hits and never touch the network.
+    else q.set("all_slots", "1");
     const res = await apiFetch(`/api/brief?${q}`);
     if (!res.ok) throw new Error(String(res.status));
     const data: Brief = await res.json();
     cache.current.set(key, data);
-    if (data.slot) {
-      cache.current.set(data.slot, data);
+    if (data.editions) {
+      for (const [s, edition] of Object.entries(data.editions)) {
+        cache.current.set(s, edition);
+      }
       // Kept in state as well as in the ref: the archive plates upgrade from
-      // slot summaries to real item counts as the background fetches land, and
-      // a ref alone would never re-render to show it.
+      // slot summaries to real item counts as editions land, and a ref alone
+      // would never re-render to show it.
+      setFiled((prev) => ({ ...prev, ...data.editions }));
+    } else if (data.slot) {
+      cache.current.set(data.slot, data);
       setFiled((prev) => ({ ...prev, [data.slot as string]: data }));
     }
     if (!background) setBrief(data);
