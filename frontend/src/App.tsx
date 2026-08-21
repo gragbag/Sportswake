@@ -116,7 +116,6 @@ function AppShell() {
 
       <div className="mx-auto max-w-5xl px-5 py-8 sm:px-8 sm:py-10">
         <Routes>
-          <Route path="/story/:storyId" element={<StoryPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/u/:handle" element={<UserPage />} />
           <Route path="/settings" element={<SettingsPage />} />
@@ -151,6 +150,10 @@ export default function App() {
             the same paper as the front page, next to the front page. */}
         <Route path="/login" element={<AuthPage mode="login" />} />
         <Route path="/signup" element={<AuthPage mode="signup" />} />
+
+        {/* The coverage timeline is the surface the design doc calls the
+            differentiator, so the story page gets the full measure. */}
+        <Route path="/story/:storyId" element={<StoryPage />} />
       </Route>
       <Route path="*" element={<AppShell />} />
     </Routes>
