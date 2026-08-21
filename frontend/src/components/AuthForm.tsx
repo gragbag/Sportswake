@@ -118,7 +118,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
   if (!authConfigured) {
     return (
-      <div className="max-w-[34rem] pt-12">
+      <div className="pt-12">
         <h1 className="t-display text-[clamp(1.75rem,4vw,2.75rem)] leading-[1.02]">
           The presses are not wired up.
         </h1>
@@ -131,7 +131,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
   }
 
   return (
-    <div className="max-w-[30rem] pt-12">
+    <div className="pt-12">
       <h1 className="t-display text-[clamp(1.875rem,4.4vw,3rem)] leading-[0.98]">
         {copy.title}
       </h1>

@@ -188,6 +188,27 @@
     white-space: nowrap;
   }
 
+  /* ---- the contents block ----------------------------------------------- */
+  /* Everything on the plate is sized from the plate's own width, and this
+     block was the one thing that was not: it carried a fixed 15px and a fixed
+     three items, which fit because the only plate on the page was 1180px wide.
+     Dropped into a 46% column on the sign-up spread, the same three items ran
+     past the bottom of a 280px-tall plate and printed over the freshness rule.
+
+     So it scales like the rest of the composition, and a narrow plate carries
+     two lines of contents rather than three. Two is not a degraded three --
+     it is what fits, and a contents block that overruns its own plate says
+     nothing useful about the edition. */
+  .plate-contents {
+    font-size: clamp(0.8125rem, 1.4cqi, 0.9375rem);
+  }
+
+  @container (max-width: 760px) {
+    .plate-contents > li:nth-child(n + 3) {
+      display: none;
+    }
+  }
+
   /* ---- registration marks ----------------------------------------------- */
   /* Two hairlines crossing, straddling the trim corner. Structural, not
      decorative: they are the reason the two colours line up. */

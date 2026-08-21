@@ -82,10 +82,10 @@ export function BriefPlate({
       {lead && edition.stories.length > 0 && (
         <div className="absolute top-[26px] right-[26px] hidden w-[38%] md:block">
           <p className="t-wire pb-3 text-ink-mute">In this edition</p>
-          <ul>
+          <ul className="plate-contents">
             {edition.stories.map((headline) => (
               <li key={headline} className="border-t border-rule py-2.5">
-                <p className="t-read text-[0.9375rem] leading-[1.35] text-ink">
+                <p className="t-read text-[length:inherit] leading-[1.35] text-ink">
                   {headline}
                 </p>
               </li>

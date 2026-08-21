@@ -1,5 +1,5 @@
 import { Link, Outlet, Route, Routes } from "react-router-dom";
-import { AuthForm } from "./components/AuthForm";
+import { AuthPage } from "./components/AuthPage";
 import { BriefPage } from "./components/BriefPage";
 import { PressShell } from "./components/PressShell";
 import { FavoritesPage } from "./components/FavoritesPage";
@@ -145,28 +145,13 @@ export default function App() {
         <Route path="/stories/c/:category" element={<Feed />} />
         <Route path="/stories/t/:team" element={<Feed />} />
         <Route path="/stories/t/:team/c/:category" element={<Feed />} />
-      </Route>
 
-      {/* Signing up is the second most important page in the product -- it is
-          where a reader becomes a subscriber -- so it is printed on the same
-          paper as the front page rather than dropped into the app shell as a
-          form on grey. */}
-      <Route
-        path="/login"
-        element={
-          <PressShell>
-            <AuthForm mode="login" />
-          </PressShell>
-        }
-      />
-      <Route
-        path="/signup"
-        element={
-          <PressShell>
-            <AuthForm mode="signup" />
-          </PressShell>
-        }
-      />
+        {/* Signing up is the second most important page in the product --
+            it is where a reader becomes a subscriber -- so it is printed on
+            the same paper as the front page, next to the front page. */}
+        <Route path="/login" element={<AuthPage mode="login" />} />
+        <Route path="/signup" element={<AuthPage mode="signup" />} />
+      </Route>
       <Route path="*" element={<AppShell />} />
     </Routes>
   );
