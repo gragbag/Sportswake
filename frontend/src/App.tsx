@@ -1,6 +1,7 @@
 import { Outlet, Route, Routes } from "react-router-dom";
 import { AuthPage } from "./components/AuthPage";
 import { BriefPage } from "./components/BriefPage";
+import { BriefRead } from "./components/BriefRead";
 import { FavoritesPage } from "./components/FavoritesPage";
 import { Feed } from "./components/Feed";
 import { PressShell } from "./components/PressShell";
@@ -35,6 +36,13 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<BriefPage />} />
+
+      {/* Reading a brief is a destination, not a detour, so it is a page with
+          a URL rather than a sheet over the front page. Outside the layout
+          route because it carries its own dateline -- the filed time of the
+          edition being read, not today's date. */}
+      <Route path="/brief/:slot" element={<BriefRead />} />
+      <Route path="/brief/:slot/:team" element={<BriefRead />} />
 
       <Route element={<PressLayout />}>
         {/* The feed that predates the brief, kept as a browsing surface:

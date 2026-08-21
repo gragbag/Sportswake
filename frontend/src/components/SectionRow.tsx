@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { minutes } from "../lib/edition";
 import type { BriefSection } from "../types";
 
@@ -23,17 +24,17 @@ function snippet(text: string, chars = 128): string {
  */
 export function SectionRow({
   section,
-  onOpen,
+  to,
 }: {
   section: BriefSection;
-  onOpen: () => void;
+  /** The team's file, as a page. */
+  to: string;
 }) {
   return (
     <li className="group border-t border-rule">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex w-full cursor-pointer items-baseline gap-4 py-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-spot"
+      <Link
+        to={to}
+        className="flex w-full items-baseline gap-4 py-4 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-spot"
       >
         <span className="t-wire w-10 shrink-0 text-ink-mute">
           {section.team}
@@ -56,7 +57,7 @@ export function SectionRow({
         <span className="t-wire shrink-0 text-ink-mute">
           {minutes(section.word_count)} min
         </span>
-      </button>
+      </Link>
     </li>
   );
 }

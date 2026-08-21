@@ -8,12 +8,11 @@ import {
   editionWindow,
   type Edition,
 } from "../lib/edition";
-import type { Brief, BriefSection } from "../types";
+import type { Brief } from "../types";
 import { BriefMeta } from "./BriefMeta";
 import { BriefPlate } from "./BriefPlate";
 import { PressShell } from "./PressShell";
 import { SlugRule, TARGET, UNDERLINE } from "./press";
-import { Reader } from "./Reader";
 import { SectionRow } from "./SectionRow";
 
 /**
@@ -126,7 +125,6 @@ export function BriefPage() {
   const { session } = useAuth();
   const [brief, setBrief] = useState<Brief | null>(null);
   const [filed, setFiled] = useState<Record<string, Brief>>({});
-  const [reading, setReading] = useState<BriefSection | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Slots already fetched, so moving between editions is instant rather than a
@@ -313,9 +311,8 @@ export function BriefPage() {
                 </span>
               ))}
             </h1>
-            <button
-              type="button"
-              onClick={() => setReading(league)}
+            <Link
+              to={`/brief/${brief.slot}`}
               aria-labelledby="lead-meta lead-head"
               className={TARGET}
             />
@@ -386,7 +383,7 @@ export function BriefPage() {
                   <SectionRow
                     key={section.team}
                     section={section}
-                    onOpen={() => setReading(section)}
+                    to={`/brief/${brief.slot}/${section.team}`}
                   />
                 ))}
               </ul>
@@ -415,17 +412,6 @@ export function BriefPage() {
           )}
         </section>
       </div>
-
-      {/* Fixed and full-screen, so it sits inside the column in the markup and
-          over the whole page on screen. */}
-      {reading && (
-        <Reader
-          section={reading}
-          slot={brief.slot}
-          generatedAt={lead.generatedAt}
-          onClose={() => setReading(null)}
-        />
-      )}
     </PressShell>
   );
 }

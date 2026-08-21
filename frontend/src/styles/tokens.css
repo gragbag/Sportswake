@@ -131,6 +131,35 @@
     margin-top: 1.05em;
   }
 
+  /* ---- the opening ------------------------------------------------------- */
+  /* A drop cap, cut from the display face so the piece opens in the same voice
+     the headline shouts in. Three lines deep: two reads as a large letter and
+     four starts fighting the column.
+
+     Sized in em against the paragraph, not in rem, so it tracks the reading
+     size instead of drifting away from it. The line-height and the top margin
+     are the fiddly part -- a cap that does not sit ON the first baseline and
+     clear the third one is worse than no cap at all, because it reads as a
+     font-size accident rather than as typesetting. */
+  .prose-open > p:first-child::first-letter {
+    float: left;
+    font-family: var(--font-plate);
+    font-variation-settings: "wdth" 72, "wght" 700;
+    font-weight: 700;
+    font-size: 3.9em;
+    line-height: 0.84;
+    padding-right: 0.07em;
+    margin-top: 0.06em;
+    color: var(--color-ink);
+  }
+
+  /* The first line, in small caps of a sort: a lede that steps up out of the
+     drop cap rather than starting at full running-text weight. */
+  .prose-open > p:first-child::first-line {
+    font-variation-settings: "opsz" 32;
+    letter-spacing: 0.005em;
+  }
+
   /* ---- the plate -------------------------------------------------------- */
   /* A composed press plate, not a photo well. Sized as a container so every
      mark on it -- above all the issue number -- scales from the plate's own
