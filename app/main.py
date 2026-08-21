@@ -1448,7 +1448,18 @@ def api_brief(
             # in place keeps "the team with the biggest news first" -- which
             # is the order the reader should get, not the order they
             # followed in.
-            ordered = [r for r in slot_rows if r.team_code in follow_set]
+            #
+            # A reader who follows nothing used to get the league section and
+            # nothing else, while the day's team files -- roughly 1,700 words
+            # already written and paid for -- were visible to nobody but
+            # followers. They are the day's biggest team stories; there is no
+            # reason to generate them and then hide them from most visitors.
+            # Following still decides WHICH teams, it no longer decides
+            # whether there are any.
+            if follow_set:
+                ordered = [r for r in slot_rows if r.team_code in follow_set]
+            else:
+                ordered = [r for r in slot_rows if r.team_code != "LEAGUE"]
 
             kept = [league] if league else []
             seen: set[str] = set(league.cluster_ids or []) if league else set()
@@ -1461,10 +1472,13 @@ def api_brief(
                 # cannot be surgically removed -- dropping the whole
                 # redundant section is the honest move.
                 if ids and ids <= seen:
-                    omitted += 1
+                    # Only counted when the reader actually follows the team.
+                    # "3 followed teams had nothing new" is a lie told to
+                    # someone who follows none, and the front page prints it.
+                    omitted += 1 if follow_set else 0
                     continue
                 if len(kept) - (1 if league else 0) >= cap and not row.is_major:
-                    omitted += 1
+                    omitted += 1 if follow_set else 0
                     continue
                 kept.append(row)
                 seen |= ids

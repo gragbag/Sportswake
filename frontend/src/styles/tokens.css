@@ -163,7 +163,36 @@
      are the fiddly part -- a cap that does not sit ON the first baseline and
      clear the third one is worse than no cap at all, because it reads as a
      font-size accident rather than as typesetting. */
-  .prose-open > p:first-child::first-letter {
+  /* Section heads inside a brief. Cut from the display face rather than set
+     as mono furniture: these are editorial subheads in a piece of writing,
+     not UI labels, and the mono slug rules around the page are already doing
+     the labelling job. The rule above each is what makes the brief scannable
+     -- a reader can see the shape of the day before reading a word of it. */
+  .prose-wire h2 {
+    font-family: var(--font-plate);
+    font-variation-settings: "wdth" 70, "wght" 700;
+    font-weight: 700;
+    font-size: 1.12em;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    margin-top: 2.1em;
+    padding-top: 0.95em;
+    border-top: 1px solid var(--color-rule);
+    color: var(--color-ink);
+  }
+  .prose-wire h2:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .prose-wire h2 + p {
+    margin-top: 0.75em;
+  }
+
+  /* first-of-type, not first-child: the brief now opens on a heading, and a
+     drop cap that only matched the first CHILD silently stopped appearing the
+     day that changed. */
+  .prose-open > p:first-of-type::first-letter {
     float: left;
     font-family: var(--font-plate);
     font-variation-settings: "wdth" 72, "wght" 700;
@@ -177,7 +206,7 @@
 
   /* The first line, in small caps of a sort: a lede that steps up out of the
      drop cap rather than starting at full running-text weight. */
-  .prose-open > p:first-child::first-line {
+  .prose-open > p:first-of-type::first-line {
     font-variation-settings: "opsz" 32;
     letter-spacing: 0.005em;
   }

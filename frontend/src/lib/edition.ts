@@ -49,6 +49,21 @@ function plain(md: string): string {
   return md.replace(/\*+/g, "").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Drop the section headings a composed brief is built from.
+ *
+ * The brief is written as passages under "## Trades", "## Injuries" and so on.
+ * Everything that reads the body as prose -- the front-page headline above
+ * all -- has to skip those, or the headline set at 5.5rem across the top of
+ * the paper becomes the word "Trades".
+ */
+function withoutHeadings(md: string): string {
+  return md
+    .split("\n")
+    .filter((line) => !/^\s*#{1,6}\s/.test(line))
+    .join("\n");
+}
+
 const HEAD_MAX = 58;
 
 /* The two trims that decide where the headline stops. Named, because they run
@@ -104,7 +119,7 @@ function firstSentence(text: string): string {
  * standfirst, so the deck continues the sentence the head started.
  */
 export function splitLead(md: string): { headline: string; standfirst: string } {
-  const text = plain(md);
+  const text = plain(withoutHeadings(md));
   if (!text) return { headline: "", standfirst: "" };
 
   const opening = firstSentence(text);
@@ -132,7 +147,14 @@ export function splitLead(md: string): { headline: string; standfirst: string } 
       return -1;
     };
     const clause = Math.max(clauseAt(","), clauseAt(";"), clauseAt("—"));
-    const cut = clause > 24 ? clause : reach.lastIndexOf(" ", HEAD_MAX);
+    // With no clause boundary to cut at, take the last whole word in REACH
+    // rather than the last one before HEAD_MAX. Stopping at 58 lands in the
+    // middle of a noun phrase about as often as not -- "The Cleveland
+    // Cavaliers have finalized a complex" is a headline that has clearly been
+    // cut, where the same sentence to the edge of the window reads as one
+    // somebody wrote: "...a complex multi-team transaction". The trims below
+    // still catch a trailing function word either way.
+    const cut = clause > 24 ? clause : reach.lastIndexOf(" ");
     // Trim the head to its FINAL printed form before measuring what carries
     // down, so that whatever the trims remove lands in the standfirst instead
     // of falling between the two halves. Trimming afterwards deleted the word
@@ -197,12 +219,23 @@ export function splitArticle(md: string): {
   body: string;
 } {
   const paragraphs = md.split(/\n\s*\n/);
-  const opening = firstSentence(paragraphs[0] ?? "");
+  // The head is cut from the first PROSE paragraph. A composed brief opens on
+  // a "## Trades" heading, and that heading stays in the body where it
+  // belongs rather than becoming the headline.
+  const leadIndex = paragraphs.findIndex(
+    (p) => p.trim() && !/^\s*#{1,6}\s/.test(p),
+  );
+  const first = leadIndex === -1 ? "" : paragraphs[leadIndex];
+  const opening = firstSentence(first);
   if (!opening) return { headline: plain(md), deck: "", body: md };
 
   const { headline, standfirst } = splitLead(opening);
-  const rest = (paragraphs[0] ?? "").slice(opening.length);
-  const body = [rest, ...paragraphs.slice(1)]
+  const rest = first.slice(opening.length);
+  const body = [
+    ...paragraphs.slice(0, leadIndex),
+    rest,
+    ...paragraphs.slice(leadIndex + 1),
+  ]
     .map((p) => p.trim())
     .filter(Boolean)
     .join("\n\n");

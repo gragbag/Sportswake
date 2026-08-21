@@ -370,9 +370,12 @@ export function BriefPage() {
           </section>
         )}
 
-        <section aria-label="Your teams" className="pt-12 md:pt-16">
+        {/* "Your teams" is only true for a reader who chose some. Everyone
+            else is being shown the day's biggest team files, which is a
+            different offer and should say so. */}
+        <section aria-label="Team files" className="pt-12 md:pt-16">
           <SlugRule
-            label="Your teams"
+            label={session ? "Your teams" : "Around the league"}
             count={teams.length > 0 ? teams.length : undefined}
           />
 

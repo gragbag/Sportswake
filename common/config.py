@@ -262,6 +262,28 @@ WORDS_PER_EXTRA_CLUSTER: int = int(os.environ.get("WORDS_PER_EXTRA_CLUSTER", "40
 # Facts the base word count already pays for; expansion starts above this.
 BASELINE_FACTS_INCLUDED: int = int(os.environ.get("BASELINE_FACTS_INCLUDED", "4"))
 
+# How many of a story's facts reach the brief writer. The summariser produces
+# five on average and this was three, so two fifths of the material the model
+# was meant to write from never arrived -- which is why briefs read thin
+# regardless of how large the word budget was set.
+BRIEF_FACTS_PER_STORY: int = int(os.environ.get("BRIEF_FACTS_PER_STORY", "5"))
+
+# A ceiling on the budget derived from how much there is to say. The base
+# targets are per SLOT and take no account of whether the day produced two
+# stories or twenty, so a quiet night still asked for 800 words -- and got
+# them, at four hundred words a story, which is the padding the prompt spends
+# eight rules trying to forbid. A fact is worth about this many words before
+# it is being stretched.
+BRIEF_MAX_WORDS_PER_FACT: int = int(os.environ.get("BRIEF_MAX_WORDS_PER_FACT", "45"))
+
+# A brief is composed as passages under headings, one per category, rather
+# than as a single unbroken run of prose. These bound that: how many headings
+# a brief may carry, and the floor under any one passage -- below which a
+# heading is introducing a single sentence, which reads worse than no heading.
+BRIEF_MAX_PASSAGES: int = int(os.environ.get("BRIEF_MAX_PASSAGES", "7"))
+BRIEF_MIN_PASSAGE_WORDS: int = int(os.environ.get("BRIEF_MIN_PASSAGE_WORDS", "70"))
+
+
 # The major-story gate. RELATIVE, never an absolute source count: coverage
 # volume swings enormously across the calendar, so eight outlets on one story
 # is extraordinary in late August and unremarkable during the Finals. A fixed
@@ -272,7 +294,7 @@ IMPORTANCE_ROLLING_WINDOW_DAYS: int = int(
 )
 
 BRIEF_MAX_CLUSTERS_PER_SECTION: int = int(
-    os.environ.get("BRIEF_MAX_CLUSTERS_PER_SECTION", "12")
+    os.environ.get("BRIEF_MAX_CLUSTERS_PER_SECTION", "18")
 )
 # Rendered sections per slot, at READ time. Generation is uncapped at 31; this
 # is what keeps a brief readable for someone following twelve teams. Lifted
