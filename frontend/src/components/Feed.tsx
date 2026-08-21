@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { CategoryTabs } from "./CategoryTabs";
-import { StoryCard } from "./StoryCard";
+import { StoryRow } from "./StoryRow";
 import { TeamSelect } from "./TeamSelect";
 import type { CategoryTab, Story, TeamOption } from "../types";
 
@@ -83,21 +83,24 @@ export function Feed() {
 
   if (error) {
     return withTabs(
-      <p className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">
-        Could not reach the API: {error}. Is <code>make api</code> running?
-      </p>
+      <div className="border-l-2 border-spot pl-4">
+        <p className="t-wire text-ink">The wire is down</p>
+        <p className="t-read mt-1 max-w-[52ch] text-ink-mute">
+          Could not reach the API: {error}. Is <code>make api</code> running?
+        </p>
+      </div>
     );
   }
 
   if (!stories) {
     return withTabs(
-      <p className="text-sm text-ink-500 dark:text-white/50">Loading&hellip;</p>,
+      <p className="t-wire text-ink-mute">Loading&hellip;</p>,
     );
   }
 
   if (stories.length === 0) {
     return withTabs(
-      <p className="text-sm text-ink-500 dark:text-white/50">
+      <p className="t-read text-ink-mute">
         {category || team
           ? "Nothing here yet."
           : "No multi-outlet stories yet. Run make recluster."}
@@ -107,25 +110,21 @@ export function Feed() {
 
   return withTabs(
     <>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <ul>
         {stories.map((story) => (
-          <StoryCard key={story.id} story={story} />
+          <StoryRow key={story.id} story={story} />
         ))}
-      </div>
+      </ul>
       {hasMore && (
-        <div className="mt-6 flex justify-center">
-          <button
-            onClick={loadMore}
-            disabled={loadingMore}
-            className="rounded-full border border-ink-200 px-4 py-1.5 text-xs
-                       text-ink-500 transition-colors hover:border-ink-500/40
-                       hover:text-ink-900 disabled:opacity-50
-                       dark:border-white/15 dark:text-white/60
-                       dark:hover:text-white"
-          >
-            {loadingMore ? "Loading…" : "More stories"}
-          </button>
-        </div>
+        <button
+          onClick={loadMore}
+          disabled={loadingMore}
+          className="t-wire flex w-full cursor-pointer items-baseline gap-4 border-t border-rule pt-4 text-ink-mute hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot disabled:opacity-50"
+        >
+          {loadingMore ? "Loading…" : "More stories"}
+          <span aria-hidden="true" className="h-px flex-1 bg-rule" />
+          <span aria-hidden="true">↓</span>
+        </button>
       )}
     </>,
   );

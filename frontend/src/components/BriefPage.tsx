@@ -12,17 +12,9 @@ import type { Brief, BriefSection } from "../types";
 import { BriefMeta } from "./BriefMeta";
 import { BriefPlate } from "./BriefPlate";
 import { PressShell } from "./PressShell";
+import { SlugRule, TARGET, UNDERLINE } from "./press";
 import { Reader } from "./Reader";
 import { SectionRow } from "./SectionRow";
-
-/* One target per edition, laid over the plate-plus-title block.
-   A <button> cannot legally contain an <h1>, and nesting the heading inside
-   one flattens it out of the accessibility tree anyway -- so the heading stays
-   where it belongs and the button is stretched across the block instead. */
-const TARGET =
-  "absolute inset-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-spot";
-const UNDERLINE =
-  "decoration-1 underline-offset-4 group-hover:underline group-has-[:focus-visible]:underline";
 
 /**
  * Break a headline into balanced typeset lines.
@@ -55,17 +47,6 @@ function splitLines(text: string, count: number): string[] {
   }
 
   return lines;
-}
-
-/** A section rule: a label, a hairline on the baseline, and a count. */
-function SlugRule({ label, count }: { label: string; count?: number }) {
-  return (
-    <div className="flex items-baseline gap-4">
-      <p className="t-wire text-ink">{label}</p>
-      <span aria-hidden="true" className="anim-rule h-px flex-1 bg-rule" />
-      {count !== undefined && <p className="t-wire text-ink-mute">{count}</p>}
-    </div>
-  );
 }
 
 /**

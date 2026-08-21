@@ -6,6 +6,10 @@
  * which is the thing Presswake is actually about.
  *
  * Inherits color via currentColor, so the parent decides how loud it is.
+ *
+ * Square ticks, not rounded bars. A 1px radius on a 2px mark is a radius you
+ * cannot see and an idiom you can -- and this page has no other rounded
+ * corner on it.
  */
 export function Sparkline({
   buckets,
@@ -14,10 +18,16 @@ export function Sparkline({
   buckets: number[];
   className?: string;
 }) {
+  // An empty bucket list would compute a NEGATIVE svg width, which is invalid
+  // and silently drops the element. The feed always sends ten, but this
+  // component should not be the thing that breaks if an endpoint ever sends
+  // none.
+  if (buckets.length === 0) return null;
+
   const peak = Math.max(...buckets, 1);
-  const barWidth = 3;
+  const barWidth = 2;
   const gap = 2;
-  const height = 14;
+  const height = 16;
 
   return (
     <svg
@@ -38,9 +48,8 @@ export function Sparkline({
             y={height - barHeight}
             width={barWidth}
             height={barHeight}
-            rx={1}
             fill="currentColor"
-            opacity={count === 0 ? 0.25 : 1}
+            opacity={count === 0 ? 0.3 : 1}
           />
         );
       })}

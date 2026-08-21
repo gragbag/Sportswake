@@ -1,0 +1,170 @@
+import { Link } from "react-router-dom";
+import { FavoriteButton } from "./FavoriteButton";
+import { Sparkline } from "./Sparkline";
+import { UNDERLINE } from "./press";
+import { timeAgo } from "../lib/time";
+import type { Story } from "../types";
+
+/** "45m", "18h", "2d" -- compact enough to sit under the sparkline. */
+function formatSpan(hours: number): string {
+  if (hours < 1) return `${Math.round(hours * 60)}m`;
+  if (hours < 48) return `${Math.round(hours)}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+type Tier = { numeral: string; head: string; deck: boolean };
+
+/**
+ * How large to set a story, from the one number that matters.
+ *
+ * This is the whole reason the feed stopped being a grid. The card grid gave a
+ * 27-outlet story and a 2-outlet story identical space, which says they are
+ * equally real -- and how real a story is, measured by how many independent
+ * outlets went to the trouble, is the product's entire thesis. Size is the
+ * cheapest way to say it and the only one a reader takes in without reading.
+ *
+ * The feed is ordered most-covered first, so this prints as a gradient down
+ * the page: a lead, a body of standard takes, and a long tail set as
+ * news-in-brief. That is a front page, arrived at from the data rather than
+ * imposed on it.
+ *
+ * Thresholds are read off the corpus, not guessed. Across 200 eligible
+ * stories the median is 2 outlets, p90 is 5 and the maximum is 27 -- so >=12
+ * is the top ~2%, 5-11 the next ~15%, and <=4 the 83% that make up the tail.
+ *
+ * Absolute rather than relative to what happens to be on screen: a 27-outlet
+ * story is a big story regardless of its neighbours, and ranking against the
+ * page would make a row change size when "More" appends the next batch.
+ */
+function tierFor(outlets: number): Tier {
+  if (outlets >= 12) {
+    return {
+      numeral: "text-[clamp(2.5rem,4.6vw,3.75rem)]",
+      head: "text-[clamp(1.5rem,3vw,2.25rem)] leading-[1.02]",
+      deck: true,
+    };
+  }
+  if (outlets >= 5) {
+    return {
+      numeral: "text-[1.75rem]",
+      head: "text-[clamp(1.1875rem,1.9vw,1.4375rem)] leading-[1.15]",
+      deck: true,
+    };
+  }
+  // No deck on the tail. A subhead under every one of 116 two-outlet stories
+  // is what turns a front page back into a list of equal things.
+  return {
+    numeral: "text-[1.25rem]",
+    head: "text-[1.0625rem] leading-[1.25]",
+    deck: false,
+  };
+}
+
+/**
+ * One story, as a take on a wire printout.
+ *
+ * Three zones, each answering a different question: how many outlets went to
+ * it, what happened, and what shape the coverage took. Rows are divided by
+ * hairlines and nothing else -- no card, no radius, no fill -- so the feed
+ * reads as one column of copy with divisions rather than a stack of tiles.
+ *
+ * The star sits OUTSIDE the link rather than inside it. A button nested in an
+ * anchor is invalid and makes a mess of keyboard order; the old card did it
+ * and papered over the consequences with preventDefault.
+ */
+export function StoryRow({ story }: { story: Story }) {
+  const tier = tierFor(story.outlet_count);
+  const headline = story.summary_title ?? story.title;
+
+  // Teams lead: who it is about, then what kind it is. Set as mono codes
+  // rather than colour chips -- a three-letter slug is what a wire service
+  // actually puts in front of a take, it says more than a dot, and it keeps
+  // thirty brand palettes off a page that prints in two colours.
+  const slug = [
+    ...story.teams.map((t) => t.code),
+    ...story.categories.map((c) => c.label),
+  ].join(" · ");
+
+  return (
+    <li className="group flex items-start gap-5 border-t border-rule sm:gap-8">
+      <Link
+        to={`/story/${story.id}`}
+        className="flex min-w-0 flex-1 items-start gap-5 py-5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-spot sm:gap-8"
+      >
+        {/* The count, set as a plate numeral in miniature. The same mark the
+            front page uses for a filing hour, doing the same job: one number,
+            large, that you read before any of the words. */}
+        <div className="w-12 shrink-0 text-right sm:w-20">
+          <span
+            className={`t-display block tabular-nums leading-[0.78] ${tier.numeral}`}
+          >
+            {story.outlet_count}
+          </span>
+          <span className="t-wire mt-2 block text-ink-mute">
+            outlet{story.outlet_count === 1 ? "" : "s"}
+          </span>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          {slug && <p className="t-wire pb-2 text-ink-mute">{slug}</p>}
+
+          <h2 className={`t-display text-ink ${tier.head} ${UNDERLINE}`}>
+            {headline}
+            {/* Generated text is always marked. In mono beside the headline
+                rather than in a grey chip: the label is a fact about the
+                copy, not a badge to be collected. */}
+            {story.summary_title && (
+              <span
+                title="Headline and subhead generated by AI from member articles"
+                className="t-wire ml-2 align-middle text-ink-mute"
+              >
+                AI
+              </span>
+            )}
+          </h2>
+
+          {tier.deck && story.summary_subhead && (
+            <p className="t-read mt-2 max-w-[68ch] text-ink-mute">
+              {story.summary_subhead}
+            </p>
+          )}
+
+          {/* Who broke it is the differentiator -- competitors show a count
+              and a timestamp, never an ordering. */}
+          <p className="t-wire mt-3 text-ink-mute">
+            {/* The feed guarantees two outlets, but a story reached by some
+                other route may not have any -- do not print a bare "first". */}
+            {story.outlets[0] && (
+              <>
+                <span className="text-ink">{story.outlets[0]}</span> first
+                <span aria-hidden="true"> · </span>
+              </>
+            )}
+            latest {timeAgo(story.last_at)}
+            {story.article_count !== story.outlet_count && (
+              <>
+                <span aria-hidden="true"> · </span>
+                {story.article_count} articles
+              </>
+            )}
+          </p>
+        </div>
+
+        {/* The shape: whether it broke at once or built. Suppressed below sm,
+            where the row has no width to spare for it. */}
+        <div className="hidden w-20 shrink-0 pt-1 sm:block">
+          <Sparkline buckets={story.buckets} className="text-ink-mute" />
+          <p className="t-wire mt-2 text-ink-mute">
+            {formatSpan(story.span_hours)} span
+          </p>
+        </div>
+      </Link>
+
+      {/* empty:hidden because FavoriteButton renders nothing when signed out,
+          and an empty box would still claim its share of the row's gap. */}
+      <div className="shrink-0 py-5 empty:hidden">
+        <FavoriteButton storyId={story.id} />
+      </div>
+    </li>
+  );
+}

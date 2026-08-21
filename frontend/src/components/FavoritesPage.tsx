@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, useAuth } from "../lib/auth";
 import { useFavorites } from "../lib/favorites";
-import { StoryCard } from "./StoryCard";
+import { StoryRow } from "./StoryRow";
 import type { Story } from "../types";
 
 export function FavoritesPage() {
@@ -63,11 +63,11 @@ export function FavoritesPage() {
           Nothing saved yet. Tap the star on any story to keep it here.
         </p>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul>
           {stories.map((story) => (
-            <StoryCard key={story.id} story={story} />
+            <StoryRow key={story.id} story={story} />
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );
