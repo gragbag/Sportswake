@@ -65,7 +65,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
   if (!authConfigured) {
     return (
-      <div className="mx-auto max-w-sm text-sm text-label-2">
+      <div className="mx-auto max-w-sm pt-12 text-sm text-ink-mute">
         <p>
           Auth is not configured. Add <code>VITE_SUPABASE_URL</code> and{" "}
           <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code>, then restart{" "}
@@ -76,14 +76,14 @@ export function AuthForm({ mode }: { mode: Mode }) {
   }
 
   return (
-    <div className="mx-auto max-w-sm">
-      <h1 className="text-xl font-semibold text-label">
+    <div className="mx-auto max-w-sm pt-12">
+      <h1 className="text-xl font-semibold text-ink">
         {copy.title}
       </h1>
 
       <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-3">
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-label-2">
+          <span className="text-[11px] uppercase tracking-wide text-ink-mute">
             Email
           </span>
           <input
@@ -92,14 +92,14 @@ export function AuthForm({ mode }: { mode: Mode }) {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="rounded border border-separator bg-surface px-3 py-2 text-sm
-                       text-label outline-none focus:border-accent
-                       dark:border-separator dark:bg-surface-2 dark:text-white"
+            className="rounded border border-rule bg-paper-lift px-3 py-2 text-sm
+                       text-ink outline-none focus:border-spot
+                      "
           />
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-label-2">
+          <span className="text-[11px] uppercase tracking-wide text-ink-mute">
             Password
           </span>
           <input
@@ -111,9 +111,9 @@ export function AuthForm({ mode }: { mode: Mode }) {
             autoComplete={mode === "signup" ? "new-password" : "current-password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="rounded border border-separator bg-surface px-3 py-2 text-sm
-                       text-label outline-none focus:border-accent
-                       dark:border-separator dark:bg-surface-2 dark:text-white"
+            className="rounded border border-rule bg-paper-lift px-3 py-2 text-sm
+                       text-ink outline-none focus:border-spot
+                      "
           />
         </label>
 
@@ -123,7 +123,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
           </p>
         )}
         {notice && (
-          <p className="rounded border border-separator p-2 text-xs text-label-2 dark:border-separator dark:text-label-2">
+          <p className="rounded border border-rule p-2 text-xs text-ink-mute">
             {notice}
           </p>
         )}
@@ -131,15 +131,15 @@ export function AuthForm({ mode }: { mode: Mode }) {
         <button
           type="submit"
           disabled={busy}
-          className="mt-1 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-white
+          className="mt-1 rounded-full bg-spot px-4 py-2.5 text-sm font-semibold text-white
                      transition-opacity hover:opacity-90 disabled:opacity-40
-                     focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                     focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
         >
           {busy ? "Working…" : copy.submit}
         </button>
       </form>
 
-      <p className="mt-4 text-xs text-label-2">
+      <p className="mt-4 text-xs text-ink-mute">
         {copy.altPrompt}{" "}
         <Link to={copy.altTo} className="underline">
           {copy.altLabel}

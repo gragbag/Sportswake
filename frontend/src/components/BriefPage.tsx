@@ -11,12 +11,9 @@ import {
 import type { Brief, BriefSection } from "../types";
 import { BriefMeta } from "./BriefMeta";
 import { BriefPlate } from "./BriefPlate";
-import { Masthead } from "./Masthead";
+import { PressShell } from "./PressShell";
 import { Reader } from "./Reader";
 import { SectionRow } from "./SectionRow";
-
-const SHELL = "min-h-dvh bg-paper text-ink";
-const COLUMN = "mx-auto w-full max-w-[1180px] px-5 pb-24 lg:px-12";
 
 /* One target per edition, laid over the plate-plus-title block.
    A <button> cannot legally contain an <h1>, and nesting the heading inside
@@ -276,181 +273,170 @@ export function BriefPage() {
 
   if (error) {
     return (
-      <div className={SHELL}>
-        <div className={COLUMN}>
-          <Masthead generatedAt={null} />
-          <h1 className="t-display max-w-[20ch] pt-8 text-[clamp(1.75rem,4vw,2.75rem)] leading-[1.02]">
-            The wire is down.
-          </h1>
-          <p className="t-read max-w-[46ch] pt-4 text-ink-mute">{error}</p>
-        </div>
-      </div>
+      <PressShell>
+        <h1 className="t-display max-w-[20ch] pt-8 text-[clamp(1.75rem,4vw,2.75rem)] leading-[1.02]">
+          The wire is down.
+        </h1>
+        <p className="t-read max-w-[46ch] pt-4 text-ink-mute">{error}</p>
+      </PressShell>
     );
   }
 
   if (!brief) {
     return (
-      <div className={SHELL}>
-        <div className={COLUMN}>
-          <Masthead generatedAt={null} />
-          <Skeleton />
-        </div>
-      </div>
+      <PressShell>
+        <Skeleton />
+      </PressShell>
     );
   }
 
   if (!brief.slot || !league || !lead) {
     return (
-      <div className={SHELL}>
-        <div className={COLUMN}>
-          <Masthead generatedAt={null} />
-          <h1 className="t-display max-w-[20ch] pt-8 text-[clamp(1.75rem,4vw,2.75rem)] leading-[1.02]">
-            No brief yet.
-          </h1>
-          <p className="t-read max-w-[46ch] pt-4 text-ink-mute">
-            The first edition appears here once the day’s coverage has been
-            gathered.
-          </p>
-        </div>
-      </div>
+      <PressShell>
+        <h1 className="t-display max-w-[20ch] pt-8 text-[clamp(1.75rem,4vw,2.75rem)] leading-[1.02]">
+          No brief yet.
+        </h1>
+        <p className="t-read max-w-[46ch] pt-4 text-ink-mute">
+          The first edition appears here once the day’s coverage has been
+          gathered.
+        </p>
+      </PressShell>
     );
   }
 
   return (
-    <div className={SHELL}>
-      <div className={COLUMN}>
-        <Masthead generatedAt={lead.generatedAt} stale={brief.is_stale} />
-
-        {/* Keyed on the slot: switching editions remounts the subtree, so the
+    <PressShell generatedAt={lead.generatedAt} stale={brief.is_stale}>
+      {/* Keyed on the slot: switching editions remounts the subtree, so the
             load sequence replays and IS the transition. A wrapper fade on top
             of it would be a second opinion about the same movement. */}
-        <div key={brief.slot}>
-          <article className="group pt-8">
-            <div className="relative">
-              <BriefPlate edition={lead} variant="lead" windowMs={windowMs} />
-              <div className="pt-4">
-                <BriefMeta edition={lead} id="lead-meta" />
-              </div>
-              <h1
-                id="lead-head"
-                className={`t-display pt-3 text-[clamp(2.75rem,7vw,5.5rem)] leading-[0.92] ${UNDERLINE}`}
-              >
-                {lines.map((line, i) => (
-                  <span
-                    key={line}
-                    className="anim-line block"
-                    style={{ "--i": i } as CSSProperties}
-                  >
-                    {/* The trailing space keeps the accessible name reading as
-                        a sentence; it collapses at the end of a line. */}
-                    {line}{" "}
-                  </span>
-                ))}
-              </h1>
-              <button
-                type="button"
-                onClick={() => setReading(league)}
-                aria-labelledby="lead-meta lead-head"
-                className={TARGET}
-              />
+      <div key={brief.slot}>
+        <article className="group pt-8">
+          <div className="relative">
+            <BriefPlate edition={lead} variant="lead" windowMs={windowMs} />
+            <div className="pt-4">
+              <BriefMeta edition={lead} id="lead-meta" />
             </div>
-            {lead.standfirst && (
-              <p className="t-read max-w-[62ch] pt-4 text-ink-mute">
-                {lead.standfirst}
-              </p>
-            )}
-          </article>
+            <h1
+              id="lead-head"
+              className={`t-display pt-3 text-[clamp(2.75rem,7vw,5.5rem)] leading-[0.92] ${UNDERLINE}`}
+            >
+              {lines.map((line, i) => (
+                <span
+                  key={line}
+                  className="anim-line block"
+                  style={{ "--i": i } as CSSProperties}
+                >
+                  {/* The trailing space keeps the accessible name reading as
+                        a sentence; it collapses at the end of a line. */}
+                  {line}{" "}
+                </span>
+              ))}
+            </h1>
+            <button
+              type="button"
+              onClick={() => setReading(league)}
+              aria-labelledby="lead-meta lead-head"
+              className={TARGET}
+            />
+          </div>
+          {lead.standfirst && (
+            <p className="t-read max-w-[62ch] pt-4 text-ink-mute">
+              {lead.standfirst}
+            </p>
+          )}
+        </article>
 
-          {back.length > 0 && (
-            <section aria-label="Other editions today" className="pt-12 md:pt-16">
-              <SlugRule label="Also today" count={back.length} />
+        {back.length > 0 && (
+          <section aria-label="Other editions today" className="pt-12 md:pt-16">
+            <SlugRule label="Also today" count={back.length} />
 
-              {/* Two 46% columns with the remaining 8% as the gutter, so the
+            {/* Two 46% columns with the remaining 8% as the gutter, so the
                   hierarchy holds by construction rather than by arithmetic on a
                   gap. Below md they stack, but each becomes a plate-left digest
                   row -- a full-width back number would be 100% of the lead and
                   the hierarchy would collapse exactly where the screen can
                   least afford it. */}
-              <div className="grid grid-cols-1 gap-y-10 pt-6 md:grid-cols-[repeat(2,46%)] md:justify-between md:gap-y-0">
-                {back.map((edition) => (
-                  <article key={edition.slot} className="group relative">
-                    <div className="flex gap-4 md:block">
-                      <div className="w-[46%] shrink-0 md:w-full">
-                        <BriefPlate
-                          edition={edition}
-                          variant="archive"
-                          windowMs={windowMs}
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1 md:pt-4">
-                        <BriefMeta
-                          edition={edition}
-                          id={`${edition.slot}-meta`}
-                        />
-                        <h2
-                          id={`${edition.slot}-head`}
-                          className={`t-display pt-2 text-[clamp(1.375rem,2.4vw,1.875rem)] leading-[1.02] ${UNDERLINE}`}
-                        >
-                          {edition.headline}
-                        </h2>
-                      </div>
+            <div className="grid grid-cols-1 gap-y-10 pt-6 md:grid-cols-[repeat(2,46%)] md:justify-between md:gap-y-0">
+              {back.map((edition) => (
+                <article key={edition.slot} className="group relative">
+                  <div className="flex gap-4 md:block">
+                    <div className="w-[46%] shrink-0 md:w-full">
+                      <BriefPlate
+                        edition={edition}
+                        variant="archive"
+                        windowMs={windowMs}
+                      />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => go(edition.slot)}
-                      aria-labelledby={`${edition.slot}-meta ${edition.slot}-head`}
-                      className={TARGET}
-                    />
-                  </article>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section aria-label="Your teams" className="pt-12 md:pt-16">
-            <SlugRule
-              label="Your teams"
-              count={teams.length > 0 ? teams.length : undefined}
-            />
-
-            {teams.length > 0 ? (
-              <>
-                <ul className="mt-1">
-                  {teams.map((section) => (
-                    <SectionRow
-                      key={section.team}
-                      section={section}
-                      onOpen={() => setReading(section)}
-                    />
-                  ))}
-                </ul>
-                {brief.omitted_team_count > 0 && (
-                  <p className="t-wire mt-4 text-ink-mute">
-                    {brief.omitted_team_count} followed team
-                    {brief.omitted_team_count === 1 ? "" : "s"} had nothing
-                    beyond what you’ve already read.
-                  </p>
-                )}
-              </>
-            ) : (
-              <div className="border-t border-rule pt-6">
-                <p className="t-read max-w-[46ch] text-ink-mute">
-                  {session
-                    ? "Follow teams and their news files under the league brief."
-                    : "Create an account to follow teams and get their news too."}
-                </p>
-                <Link
-                  to={session ? "/settings" : "/signup"}
-                  className="t-wire mt-4 inline-block border-b border-spot pb-1 text-ink hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
-                >
-                  {session ? "Choose teams" : "Get started"}
-                </Link>
-              </div>
-            )}
+                    <div className="min-w-0 flex-1 md:pt-4">
+                      <BriefMeta
+                        edition={edition}
+                        id={`${edition.slot}-meta`}
+                      />
+                      <h2
+                        id={`${edition.slot}-head`}
+                        className={`t-display pt-2 text-[clamp(1.375rem,2.4vw,1.875rem)] leading-[1.02] ${UNDERLINE}`}
+                      >
+                        {edition.headline}
+                      </h2>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => go(edition.slot)}
+                    aria-labelledby={`${edition.slot}-meta ${edition.slot}-head`}
+                    className={TARGET}
+                  />
+                </article>
+              ))}
+            </div>
           </section>
-        </div>
+        )}
+
+        <section aria-label="Your teams" className="pt-12 md:pt-16">
+          <SlugRule
+            label="Your teams"
+            count={teams.length > 0 ? teams.length : undefined}
+          />
+
+          {teams.length > 0 ? (
+            <>
+              <ul className="mt-1">
+                {teams.map((section) => (
+                  <SectionRow
+                    key={section.team}
+                    section={section}
+                    onOpen={() => setReading(section)}
+                  />
+                ))}
+              </ul>
+              {brief.omitted_team_count > 0 && (
+                <p className="t-wire mt-4 text-ink-mute">
+                  {brief.omitted_team_count} followed team
+                  {brief.omitted_team_count === 1 ? "" : "s"} had nothing beyond
+                  what you’ve already read.
+                </p>
+              )}
+            </>
+          ) : (
+            <div className="border-t border-rule pt-6">
+              <p className="t-read max-w-[46ch] text-ink-mute">
+                {session
+                  ? "Follow teams and their news files under the league brief."
+                  : "Create an account to follow teams and get their news too."}
+              </p>
+              <Link
+                to={session ? "/settings" : "/signup"}
+                className="t-wire mt-4 inline-block border-b border-spot pb-1 text-ink hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
+              >
+                {session ? "Choose teams" : "Get started"}
+              </Link>
+            </div>
+          )}
+        </section>
       </div>
 
+      {/* Fixed and full-screen, so it sits inside the column in the markup and
+          over the whole page on screen. */}
       {reading && (
         <Reader
           section={reading}
@@ -459,6 +445,6 @@ export function BriefPage() {
           onClose={() => setReading(null)}
         />
       )}
-    </div>
+    </PressShell>
   );
 }

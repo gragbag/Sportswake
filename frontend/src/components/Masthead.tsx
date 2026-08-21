@@ -1,11 +1,34 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Fragment, useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { formatClock, formatDayStamp } from "../lib/dateline";
 import { readTheme, saveTheme, type Theme } from "../lib/theme";
 
 const LINK =
   "hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot";
+
+/**
+ * The furniture links, as data.
+ *
+ * Two branches written out by hand drifted: the signed-out run separated its
+ * items with interpuncts and the signed-in run used bare gaps, so the same
+ * masthead punctuated itself two ways depending on who was reading it.
+ *
+ * `lead` is the one item set in full ink -- the action the paper wants from a
+ * reader who does not have an account yet.
+ */
+type NavItem = { to: string; label: string; lead?: boolean };
+
+const ANON: NavItem[] = [
+  { to: "/stories", label: "Stories" },
+  { to: "/login", label: "Sign in" },
+  { to: "/signup", label: "Get started", lead: true },
+];
+
+const MEMBER: NavItem[] = [
+  { to: "/stories", label: "Stories" },
+  { to: "/settings", label: "Teams" },
+];
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: "light", label: "Day" },
@@ -78,7 +101,9 @@ export function Masthead({
   stale?: boolean;
 }) {
   const { email, loading, signOut } = useAuth();
+  const { pathname } = useLocation();
   const stamp = generatedAt ?? new Date().toISOString();
+  const items = email ? MEMBER : ANON;
 
   return (
     <header>
@@ -111,42 +136,48 @@ export function Masthead({
           >
             {/* Render nothing rather than a flash of "Sign in" for an
                 already-logged-in reader while the session is restored. */}
-            {!loading &&
-              (email ? (
-                <>
-                  <Link to="/stories" className={LINK}>
-                    Stories
-                  </Link>
-                  <Link to="/settings" className={LINK}>
-                    Teams
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={signOut}
-                    className={`cursor-pointer ${LINK}`}
-                  >
-                    Sign out
-                  </button>
-                </>
-              ) : (
-                <>
-                  <Link to="/stories" className={LINK}>
-                    Stories
-                  </Link>
-                  <span aria-hidden="true" className="text-rule">
-                    ·
-                  </span>
-                  <Link to="/login" className={LINK}>
-                    Sign in
-                  </Link>
-                  <span aria-hidden="true" className="text-rule">
-                    ·
-                  </span>
-                  <Link to="/signup" className={`text-ink ${LINK}`}>
-                    Get started
-                  </Link>
-                </>
-              ))}
+            {!loading && (
+              <>
+                {items.map((item, i) => (
+                  <Fragment key={item.to}>
+                    {i > 0 && (
+                      <span aria-hidden="true" className="text-rule">
+                        ·
+                      </span>
+                    )}
+                    {/* The page you are already on is set, not linked. A
+                        masthead that offers to take you where you are reads
+                        as furniture nobody checked. */}
+                    {pathname === item.to ? (
+                      <span aria-current="page" className="text-ink">
+                        {item.label}
+                      </span>
+                    ) : (
+                      <Link
+                        to={item.to}
+                        className={`${item.lead ? "text-ink " : ""}${LINK}`}
+                      >
+                        {item.label}
+                      </Link>
+                    )}
+                  </Fragment>
+                ))}
+                {email && (
+                  <>
+                    <span aria-hidden="true" className="text-rule">
+                      ·
+                    </span>
+                    <button
+                      type="button"
+                      onClick={signOut}
+                      className={`cursor-pointer ${LINK}`}
+                    >
+                      Sign out
+                    </button>
+                  </>
+                )}
+              </>
+            )}
             <span aria-hidden="true" className="text-rule">
               |
             </span>

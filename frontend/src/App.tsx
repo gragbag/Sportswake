@@ -1,6 +1,7 @@
 import { Link, Route, Routes } from "react-router-dom";
 import { AuthForm } from "./components/AuthForm";
 import { BriefPage } from "./components/BriefPage";
+import { PressShell } from "./components/PressShell";
 import { FavoritesPage } from "./components/FavoritesPage";
 import { Feed } from "./components/Feed";
 import { SettingsPage } from "./components/SettingsPage";
@@ -112,8 +113,6 @@ function AppShell() {
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/u/:handle" element={<UserPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/login" element={<AuthForm mode="login" />} />
-          <Route path="/signup" element={<AuthForm mode="signup" />} />
         </Routes>
       </div>
     </div>
@@ -130,6 +129,26 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<BriefPage />} />
+      {/* Signing up is the second most important page in the product -- it is
+          where a reader becomes a subscriber -- so it is printed on the same
+          paper as the front page rather than dropped into the app shell as a
+          form on grey. */}
+      <Route
+        path="/login"
+        element={
+          <PressShell>
+            <AuthForm mode="login" />
+          </PressShell>
+        }
+      />
+      <Route
+        path="/signup"
+        element={
+          <PressShell>
+            <AuthForm mode="signup" />
+          </PressShell>
+        }
+      />
       <Route path="*" element={<AppShell />} />
     </Routes>
   );
