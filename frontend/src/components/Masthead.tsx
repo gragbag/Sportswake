@@ -88,7 +88,7 @@ export function Masthead({
             Sportswake
           </span>
           <span className="t-wire mt-1 block text-ink-mute">
-            NBA, three times a day
+            NBA, every morning
           </span>
         </div>
 

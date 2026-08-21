@@ -10,9 +10,11 @@ import { hoursSince } from "../lib/dateline";
  * carries no percentage readout -- a number would turn it into a progress bar,
  * and an edition is not a task completing.
  *
- * The window is passed in rather than fixed at 24h because this product files
- * three times a day; a day-long rule would still read "fresh" two editions
- * after this one was superseded.
+ * The window is passed in rather than fixed here because the cadence is an
+ * editorial decision, not a property of this component: it is a day while the
+ * product files once a day, and becomes the measured gap between filings the
+ * moment a second edition is switched back on. Hardcoding either number would
+ * make this rule start lying on the deploy that changed that line.
  *
  * Read once, at mount. No interval: a brief does not get fresher while you
  * look at it, and a rule creeping leftward would imply it might.

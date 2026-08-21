@@ -105,13 +105,18 @@ function Skeleton() {
 /**
  * The brief, as a front page.
  *
- * The product files three editions a day, and the design carries exactly three
- * plates -- one lead and two at 46% of it. So the plates ARE the day: the
- * edition you are reading is the front page, and the other two sit under it
- * the way back numbers sit on a shelf. That replaces the old sidebar rail
- * outright while still answering what it answered -- what else is there today,
- * and is it worth my time -- in the size and position of the plates rather
- * than in a list of rows.
+ * The plates ARE the day: the edition you are reading is the front page, and
+ * any other edition filed today sits under it the way back numbers sit on a
+ * shelf -- a lead plate and up to two at 46% of it. That replaces the old
+ * sidebar rail outright while still answering what it answered -- what else is
+ * there today, and is it worth my time -- in the size and position of the
+ * plates rather than in a list of rows.
+ *
+ * At the current cadence of one edition a day there are no back numbers, so
+ * the page is the lead plate alone and the shelf below it renders nothing.
+ * The layout is deliberately kept rather than cut down to match: which
+ * editions publish is one line of briefs.yml, and this composition is what
+ * makes turning a second one back on a config change instead of a rewrite.
  *
  * Clicking the lead opens it to read; clicking a back number brings it to the
  * front. Same component, and the meta line above each says which is which.

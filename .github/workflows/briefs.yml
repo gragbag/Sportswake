@@ -55,8 +55,13 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          # The editorial valve: which editions publish. Two for now --
-          # offseason news does not fill three. The machinery keeps all
-          # three slots; changing this line is the whole change.
-          BRIEF_SLOTS: morning,night
+          # The editorial valve: which editions publish. One for now -- the
+          # offseason does not fill three and, on the evidence of the two-slot
+          # run, does not reliably fill two either. The machinery keeps all
+          # three slots and the front page keeps its shelf for back numbers,
+          # so changing this line is still the whole change in either
+          # direction. Readers asking for a slot that is not published fall
+          # through to the day's edition on the API's newest tier, which is
+          # why dropping one needs no other change.
+          BRIEF_SLOTS: morning
         run: python -m worker.brief

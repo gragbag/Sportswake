@@ -25,6 +25,10 @@ python3 -m venv .venv
 npm --prefix frontend ci
 ```
 
+On Windows the venv puts its executables in `.venv/Scripts` rather than
+`.venv/bin` — substitute that in the three lines above. The Makefile detects
+which one exists, so every `make` target below is unchanged.
+
 ## Configure
 
 Create `.env` in the repo root (it is gitignored — never commit it):
@@ -67,10 +71,22 @@ Two terminals:
 
 ```bash
 make api    # FastAPI on :8000
-make web    # Vite dev server — open the URL it prints, at /app/
+make web    # Vite dev server — open the URL it prints
 ```
 
+The brief is served at the root, so the URL Vite prints is the whole address.
 The dev server proxies `/api/*` to :8000, so there is no CORS to configure.
+
+No `make` (it is not installed with Git for Windows)? The two targets are one
+command each:
+
+```bash
+.venv/Scripts/uvicorn app.main:app --reload --port 8000
+npm --prefix frontend run dev
+```
+
+Vite binds IPv6 first, so reach it on `localhost:5173` — `127.0.0.1:5173`
+refuses the connection.
 
 ## Checks
 

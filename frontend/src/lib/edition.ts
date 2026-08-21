@@ -51,6 +51,13 @@ function plain(md: string): string {
 
 const HEAD_MAX = 58;
 
+/* The two trims that decide where the headline stops. Named, because they run
+   in two places now -- once inside the truncation branch, before the carry is
+   measured, and once on a headline short enough never to have been cut. */
+const TRAILING_PUNCT = /[\s,;:.—-]+$/;
+const DANGLING =
+  /\s+(of|to|a|an|the|and|or|in|on|at|by|for|with|from|as|that|into|over|after|before|than)$/i;
+
 /**
  * Split the opening of a brief into a headline and the line under it.
  *
@@ -85,23 +92,30 @@ export function splitLead(md: string): { headline: string; standfirst: string } 
       reach.lastIndexOf(" — "),
     );
     const cut = clause > 24 ? clause : reach.lastIndexOf(" ", HEAD_MAX);
-    const keep = headline.slice(0, cut > 0 ? cut : HEAD_MAX).trim();
+    // Trim the head to its FINAL printed form before measuring what carries
+    // down, so that whatever the trims remove lands in the standfirst instead
+    // of falling between the two halves. Trimming afterwards deleted the word
+    // outright: "...saw movement in Atlanta and Orlando on Tuesday" cut to
+    // "...saw movement in Atlanta" over "Orlando on Tuesday." and the reader
+    // was left to notice the missing "and" at 5.5rem.
+    const keep = headline
+      .slice(0, cut > 0 ? cut : HEAD_MAX)
+      .trim()
+      .replace(TRAILING_PUNCT, "")
+      .replace(DANGLING, "");
     const carried = headline.slice(keep.length).replace(/^[\s,;:—-]+/, "");
     rest = `${carried} ${rest}`.trim();
     headline = keep;
   }
 
   // A headline is not a sentence; the punctuation is the prose's, not ours.
-  headline = headline.replace(/[\s,;:.—-]+$/, "");
-
-  // Never end on a dangling function word. Cutting the real "...have been sold
-  // to a partnership of Bob Iger and Josh Kushner" at the character limit
-  // leaves "...sold to a partnership of", which reads as a truncation bug even
-  // though nothing was elided.
-  headline = headline.replace(
-    /\s+(of|to|a|an|the|and|or|in|on|at|by|for|with|from|as|that|into|over|after|before|than)$/i,
-    "",
-  );
+  // Never end on a dangling function word either: cutting the real "...have
+  // been sold to a partnership of Bob Iger and Josh Kushner" at the character
+  // limit leaves "...sold to a partnership of", which reads as a truncation
+  // bug even though nothing was elided. Both are no-ops on a head that came
+  // through the branch above -- they already ran there, where the carry could
+  // still catch what they took.
+  headline = headline.replace(TRAILING_PUNCT, "").replace(DANGLING, "");
 
   if (rest) rest = rest.charAt(0).toUpperCase() + rest.slice(1);
   if (rest.length > 150) {
@@ -177,16 +191,28 @@ export function editionFromSlot(slot: BriefSlot, live: boolean): Edition {
   };
 }
 
-/** Three editions a day, so roughly eight hours between them. */
-const NOMINAL_WINDOW_MS = 8 * 3_600_000;
+/**
+ * The watch to assume when the day has filed only one edition to measure.
+ *
+ * A day, not eight hours. At one edition a day this is not a fallback at all
+ * -- it is the value the rule always runs on, because two filings are what
+ * `editionWindow` needs to measure a real gap and there is only ever one. At
+ * eight hours the day's only edition drained to "Standing" by mid-afternoon
+ * with nothing published to supersede it, which is the rule reporting a
+ * supersession that did not happen.
+ */
+const NOMINAL_WINDOW_MS = 24 * 3_600_000;
 
 /**
  * How long the live edition stands before the next one is due.
  *
- * Measured from the gap between the last two editions actually filed today
- * rather than a fixed 24 hours: this product ships three times a day, so a
- * rule that empties at midnight would read "fresh" through two supersessions.
- * Falls back to a nominal window when only one edition exists to measure.
+ * Measured from the gap between the last two editions actually filed today,
+ * so the rule tracks the cadence instead of asserting one. That matters
+ * because the cadence is an editorial decision living in a single line of
+ * briefs.yml, not a constant: at one edition a day the measurement never has
+ * two filings to work from and the nominal day below carries it, and if a
+ * second slot is switched back on the gap starts measuring itself again
+ * without anything here changing.
  */
 export function editionWindow(slots: BriefSlot[]): number {
   const filed = slots

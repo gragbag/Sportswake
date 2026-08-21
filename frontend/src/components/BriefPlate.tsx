@@ -11,9 +11,13 @@ import { FreshnessRule } from "./FreshnessRule";
  * what makes the two passes line up. None of it is ornament; it is the
  * mechanics of the thing, drawn at full size.
  *
- * The numeral is the hour the edition was filed. Three plates reading 06, 12
- * and 21 across the page say "three times a day" without a line of copy, and
- * unlike an invented issue number it is a fact the API already knows.
+ * The numeral is the hour the edition was filed -- unlike an invented issue
+ * number, a fact the API already knows. At one edition a day it is the whole
+ * dateline the plate needs: this is the day's paper, and here is when it went
+ * to press. It was also the cadence argument back when the day carried three
+ * plates -- 06, 12 and 21 across the page said "three times a day" without a
+ * line of copy -- and it would say it again unchanged if a second slot came
+ * back on.
  *
  * The numeral and the overprinted slug are both aria-hidden: the hour is
  * restated in the meta line's dateline and the headline is the <h1> itself. A
@@ -54,8 +58,13 @@ export function BriefPlate({
           thing on the page: the same sentence set twice, once here and again
           as the <h1> six lines below, which reads as a duplication bug rather
           than as a plate. A plate identifies its edition -- that is the whole
-          job of the furniture at the top of one -- so it says which of the
-          day's three runs this is, and the news is left to be news once. */}
+          job of the furniture at the top of one -- so it names the run, and
+          the news is left to be news once.
+
+          Kept as the slot name at one edition a day, rather than swapped for
+          the date. The date is already set in the meta line directly beneath
+          the plate, and putting it here too would recreate exactly the
+          duplication this block was written to remove. */}
       <p
         aria-hidden="true"
         className="t-display plate-slug absolute top-[26px] left-[26px] text-ink"

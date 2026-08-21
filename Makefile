@@ -6,7 +6,12 @@
         api web web-build summarize summarize-dry moderate \
         categorize categorize-dry evict scores importance
 
-VENV     := .venv/bin
+# Windows venvs put their executables in Scripts/, POSIX ones in bin/.
+# Detected rather than configured: `make api` should be the same command
+# whichever machine is typing it, and a contributor on Windows hitting
+# "make: .venv/bin/uvicorn: No such file" has no way to tell that the repo
+# is fine and only the path convention differs.
+VENV     := $(if $(wildcard .venv/Scripts),.venv/Scripts,.venv/bin)
 LOCAL_DB := postgresql://postgres:postgres@localhost:5432/presswake
 
 # Targets run against Supabase by default: no DATABASE_URL is set here, so
