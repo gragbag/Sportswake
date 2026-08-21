@@ -1,4 +1,4 @@
-import { Link, Route, Routes } from "react-router-dom";
+import { Link, Outlet, Route, Routes } from "react-router-dom";
 import { AuthForm } from "./components/AuthForm";
 import { BriefPage } from "./components/BriefPage";
 import { PressShell } from "./components/PressShell";
@@ -67,6 +67,21 @@ function HeaderAuth() {
 }
 
 /**
+ * Paper, as a layout route.
+ *
+ * Wrapping each route in <PressShell> by hand worked for the two auth pages
+ * and stops working at four feed routes. Listing a page here is how it joins
+ * the paper from now on.
+ */
+function PressLayout() {
+  return (
+    <PressShell>
+      <Outlet />
+    </PressShell>
+  );
+}
+
+/**
  * The chrome for everything that is not the brief.
  *
  * Settings and auth are app screens and keep the app's surfaces: a sticky bar,
@@ -101,14 +116,6 @@ function AppShell() {
 
       <div className="mx-auto max-w-5xl px-5 py-8 sm:px-8 sm:py-10">
         <Routes>
-          {/* The card feed that predates the brief, kept as a browsing
-              surface: every multi-outlet story, filterable by team and
-              category. Team and category compose; each combination is one
-              Feed, same as the original app. */}
-          <Route path="/stories" element={<Feed />} />
-          <Route path="/stories/c/:category" element={<Feed />} />
-          <Route path="/stories/t/:team" element={<Feed />} />
-          <Route path="/stories/t/:team/c/:category" element={<Feed />} />
           <Route path="/story/:storyId" element={<StoryPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/u/:handle" element={<UserPage />} />
@@ -129,6 +136,17 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<BriefPage />} />
+
+      {/* Everything printed on paper. The feed's browsing controls are set as
+          press furniture now, so it belongs here rather than under a
+          backdrop-blurred bar on grey. */}
+      <Route element={<PressLayout />}>
+        <Route path="/stories" element={<Feed />} />
+        <Route path="/stories/c/:category" element={<Feed />} />
+        <Route path="/stories/t/:team" element={<Feed />} />
+        <Route path="/stories/t/:team/c/:category" element={<Feed />} />
+      </Route>
+
       {/* Signing up is the second most important page in the product -- it is
           where a reader becomes a subscriber -- so it is printed on the same
           paper as the front page rather than dropped into the app shell as a

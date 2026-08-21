@@ -144,30 +144,53 @@ def api_stats() -> dict:
 
 
 @app.get("/api/categories")
-def api_categories() -> list[dict]:
-    """The tab bar, with a count of stories in each.
+def api_categories(team: str | None = None) -> list[dict]:
+    """The section index, with a count of stories in each.
 
     Counts come from the same visibility rule as the feed (2+ outlets), so a
-    tab never advertises stories it will not show. They will not sum to the
-    story total -- a story can hold two categories.
+    section never advertises stories it will not show. They will not sum to
+    the story total -- a story can hold two categories.
+
+    `team` narrows the counts the same way the feed narrows its rows. Without
+    it the index sat above a team-filtered feed still quoting league-wide
+    totals: /stories/t/LAL offered "Free Agency 58" and delivered five. The
+    index and the feed have to be filtered by the same thing or the numbers
+    are a promise the next click breaks.
+
+    The count is over `eligible.story_id`, not `sc.story_id`. The left join
+    does not discard anything, so counting the story_categories side counted
+    ineligible stories too -- harmless while every categorised story happened
+    to have two outlets, and silently wrong the moment one does not.
     """
     with Session() as session:
+        params: dict = {}
+        team_sql = ""
+        if team:
+            team_sql = """
+                and exists (
+                    select 1 from story_teams st
+                    where st.story_id = sm.story_id and st.team_code = :team
+                )
+            """
+            # Codes are stored uppercase; tolerate a hand-typed /t/lal.
+            params["team"] = team.upper()
         rows = session.execute(
-            text("""
-                select c.slug, c.label, count(distinct sc.story_id) as n
+            text(f"""
+                select c.slug, c.label, count(distinct eligible.story_id) as n
                 from categories c
                 left join story_categories sc on sc.category_slug = c.slug
                 left join (
                     select sm.story_id
                     from story_members sm
                     join articles a on a.id = sm.article_id
+                    where true {team_sql}
                     group by sm.story_id
                     having count(distinct a.outlet_id) >= 2
                 ) eligible on eligible.story_id = sc.story_id
-                                and eligible.story_id is not null
                 group by c.slug, c.label, c.sort_order
                 order by c.sort_order
-            """)
+            """),
+            params,
         ).all()
     return [{"slug": r.slug, "label": r.label, "count": r.n} for r in rows]
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { CategoryTabs } from "./CategoryTabs";
+import { SlugRule } from "./press";
 import { StoryRow } from "./StoryRow";
 import { TeamSelect } from "./TeamSelect";
 import type { CategoryTab, Story, TeamOption } from "../types";
@@ -19,11 +20,19 @@ export function Feed() {
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // Re-fetched when the team changes, because the counts are scoped to it.
+  // Without that the index sat above a team-filtered feed quoting league-wide
+  // totals -- /stories/t/LAL offered "Free Agency 58" and delivered five.
   useEffect(() => {
-    fetch("/api/categories")
+    const q = team ? `?team=${encodeURIComponent(team)}` : "";
+    fetch(`/api/categories${q}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(setTabs)
       .catch(() => setTabs([]));
+  }, [team]);
+
+  // The team list is league-wide and never changes with the route.
+  useEffect(() => {
     fetch("/api/teams")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(setTeams)
@@ -71,14 +80,20 @@ export function Feed() {
     }
   }
 
+  // The section head: a slug rule with the team picker set on it, and the
+  // section index underneath. One block, so every state of the feed below --
+  // loading, empty, error, loaded -- hangs off the same furniture rather than
+  // each inventing its own top of page.
   const withTabs = (inner: React.ReactNode) => (
-    <>
-      <TeamSelect teams={teams} />
-      {/* Tabs link inside the selected team, so the two filters compose.
-          Rooted at /stories since the brief took over "/". */}
+    <div className="pt-8">
+      <SlugRule label="Stories">
+        <TeamSelect teams={teams} />
+      </SlugRule>
+      {/* The index links inside the selected team, so the two filters
+          compose. Rooted at /stories since the brief took over "/". */}
       <CategoryTabs tabs={tabs} base={team ? `/stories/t/${team}` : "/stories"} />
-      {inner}
-    </>
+      <div className="pt-8">{inner}</div>
+    </div>
   );
 
   if (error) {
