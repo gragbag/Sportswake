@@ -120,12 +120,34 @@
 
   /* The brief itself, at reading size. Newsreader carries an optical-size axis,
      so running text asks for a larger opsz than the 17px standfirst does --
-     that is the axis doing its job rather than one face scaled twice. */
+     that is the axis doing its job rather than one face scaled twice.
+
+     The size grows with the viewport, and that is what widens the column: the
+     measure is set in `ch`, so the page gets physically wider without the line
+     getting longer to read. At 19px the column ran 72-77 characters, already
+     at the top of the comfortable band -- stretching the line further was the
+     move to avoid, and setting the type larger is the one that was available. */
   .prose-wire {
     font-family: var(--font-news);
     font-variation-settings: "opsz" 28;
-    font-size: 1.1875rem;
+    font-size: var(--read-size, 1.1875rem);
     line-height: 1.62;
+  }
+
+  /* The reading column: one size, and a measure derived from it.
+     
+     Setting the two independently is what went wrong twice. A `ch` measure on
+     the wrapper resolved against the wrapper's own 16px and ignored the
+     reading size completely, pinning the column at 598px however large the
+     type grew; a fixed rem measure then grew the column but not the type and
+     ran the line out to 84 characters, which is past tracking.
+     
+     Newsreader averages about 0.425em a character, so 31 x the font size is a
+     ~72-character line -- the top of the comfortable band -- and it stays
+     there at every size because both sides scale from the same number. */
+  .read-column {
+    --read-size: clamp(1.1875rem, 0.95rem + 0.62vw, 1.5rem);
+    max-width: calc(var(--read-size) * 31);
   }
   .prose-wire p + p {
     margin-top: 1.05em;

@@ -121,7 +121,8 @@ export function BriefRead() {
 
   return (
     <PressShell generatedAt={filed} stale={brief.is_stale}>
-      <div className="mx-auto max-w-[68ch]">
+      {/* Size and measure both come from .read-column, so they cannot drift. */}
+      <div className="read-column mx-auto">
         {back}
 
         <article className="pt-8">
