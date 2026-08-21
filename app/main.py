@@ -1353,7 +1353,19 @@ def _stories_for(session, cluster_ids: list[str]) -> dict[str, dict]:
                    min(a.effective_at) as first_at,
                    (array_agg(a.url order by a.effective_at))[1] as lead_url,
                    (array_agg(o.name order by a.effective_at))[1] as lead_outlet,
-                   array_agg(distinct o.name) as outlets
+                   array_agg(distinct o.name) as outlets,
+                   -- The clubs the story is about, best-ranked first. The
+                   -- front page charts its own composition from these, and a
+                   -- correlated subquery keeps the outlet aggregation above
+                   -- from multiplying by the team rows.
+                   (
+                     select coalesce(
+                       array_agg(st.team_code order by st.relevance desc), '{}'
+                     )
+                     from story_teams st
+                     join teams t on t.code = st.team_code and t.kind = 'team'
+                     where st.story_id = sm.story_id
+                   ) as teams
             from story_members sm
             join stories s on s.id = sm.story_id
             join articles a on a.id = sm.article_id
@@ -1372,6 +1384,7 @@ def _stories_for(session, cluster_ids: list[str]) -> dict[str, dict]:
             "lead_outlet": r.lead_outlet,
             "lead_url": r.lead_url,
             "outlets": sorted(r.outlets),
+            "teams": list(r.teams or []),
         }
         for r in rows
     }

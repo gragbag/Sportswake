@@ -291,7 +291,12 @@ export function BriefPage() {
       <div key={brief.slot}>
         <article className="group pt-8">
           <div className="relative">
-            <BriefPlate edition={lead} variant="lead" windowMs={windowMs} />
+            <BriefPlate
+                edition={lead}
+                variant="lead"
+                windowMs={windowMs}
+                personal={(brief.following ?? []).length > 0}
+              />
             <div className="pt-4">
               <BriefMeta edition={lead} id="lead-meta" />
             </div>

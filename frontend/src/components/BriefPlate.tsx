@@ -1,4 +1,5 @@
 import type { Edition } from "../lib/edition";
+import { EditionMarks } from "./EditionMarks";
 import { FreshnessRule } from "./FreshnessRule";
 
 /**
@@ -27,10 +28,13 @@ export function BriefPlate({
   edition,
   variant,
   windowMs,
+  personal = false,
 }: {
   edition: Edition;
   variant: "lead" | "archive";
   windowMs: number;
+  /** True when the reader follows teams, so the marks are really theirs. */
+  personal?: boolean;
 }) {
   const lead = variant === "lead";
   const pad = lead
@@ -91,6 +95,12 @@ export function BriefPlate({
               </li>
             ))}
           </ul>
+
+          {/* Under the contents, in the same column: the right side of a
+              16:9 plate is empty below them, and the numeral owns the left.
+              Both are suppressed together below md, where a 46% plate has
+              room for neither. */}
+          <EditionMarks stories={edition.items} personal={personal} />
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import type { Brief, BriefSlot } from "../types";
+import type { Brief, BriefSlot, BriefStory } from "../types";
 import { formatHour } from "./dateline";
 
 /**
@@ -24,6 +24,8 @@ export type Edition = {
   teams: string[];
   /** Top story headlines, for the plate's contents block. */
   stories: string[];
+  /** Every story in the edition, for the plate's composition marks. */
+  items: BriefStory[];
   live: boolean;
 };
 
@@ -270,6 +272,13 @@ export function editionFromBrief(brief: Brief, live: boolean): Edition | null {
       .slice(0, 3),
     // In the order the section used them, so the plate matches the prose.
     stories: (league?.stories ?? []).map((s) => s.headline).slice(0, 3),
+    // Every section's stories, deduped: the composition is the whole edition's,
+    // not just the league passage's.
+    items: [
+      ...new Map(
+        brief.sections.flatMap((sec) => sec.stories).map((st) => [st.id, st]),
+      ).values(),
+    ],
     live,
   };
 }
@@ -294,6 +303,7 @@ export function editionFromSlot(slot: BriefSlot, live: boolean): Edition {
     readMinutes: minutes(slot.word_count),
     teams: [],
     stories: [],
+    items: [],
     live,
   };
 }

@@ -13,6 +13,8 @@ export type BriefStory = {
   lead_outlet: string;
   lead_url: string;
   outlets: string[];
+  /** Club codes, best-ranked first. Empty when nothing could be placed. */
+  teams: string[];
 };
 
 /**

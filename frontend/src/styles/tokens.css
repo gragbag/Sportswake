@@ -305,6 +305,29 @@
     }
   }
 
+  /* ---- chart marks -------------------------------------------------------- */
+  /* A club's colour has two values, one per run, because the band that reads
+     on #e4e1d6 is not the band that reads on #1a1b18. The component sets both
+     as custom properties and the stylesheet picks, for the same reason the
+     tokens do: the theme has three states and only CSS can see all of them.
+
+     Square ends, no radius. The default chart spec asks for rounded data-ends;
+     this design has no corner radius anywhere and a rounded bar would be the
+     only one on the page. */
+  .team-fill {
+    background: var(--team-day);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .team-fill {
+      background: var(--team-night);
+    }
+  }
+
+  :root[data-theme="dark"] .team-fill {
+    background: var(--team-night);
+  }
+
   /* ---- registration marks ----------------------------------------------- */
   /* Two hairlines crossing, straddling the trim corner. Structural, not
      decorative: they are the reason the two colours line up. */
