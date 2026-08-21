@@ -176,11 +176,14 @@ export function Masthead({
                     </button>
                   </>
                 )}
+                {/* Inside the guard with the links it divides. Outside it,
+                    the session-restore frame rendered a leading rule with
+                    nothing before it. */}
+                <span aria-hidden="true" className="text-rule">
+                  |
+                </span>
               </>
             )}
-            <span aria-hidden="true" className="text-rule">
-              |
-            </span>
             <PressRun />
           </nav>
         </div>

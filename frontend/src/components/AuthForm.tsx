@@ -6,20 +6,73 @@ type Mode = "login" | "signup";
 
 const COPY = {
   login: {
-    title: "Sign in",
+    title: "Sign in.",
+    standfirst: null,
+    deck: null,
     submit: "Sign in",
     altPrompt: "No account yet?",
-    altLabel: "Create one",
+    altLabel: "Get started",
     altTo: "/signup",
   },
   signup: {
-    title: "Create an account",
+    title: "Start your morning edition.",
+    standfirst: "Free · NBA · Every morning",
+    deck: "Follow your teams and their news files under the league brief, filed once a day.",
     submit: "Create account",
     altPrompt: "Already have an account?",
     altLabel: "Sign in",
     altTo: "/login",
   },
 } as const;
+
+/**
+ * A field, set as a line to write on.
+ *
+ * Underlined rather than boxed. A rounded, filled, bordered input is the one
+ * object that would drag the whole page back into being an application, and
+ * the underline is what a form printed on paper actually looks like. The rule
+ * going spot on focus is the accent doing its declared job -- this is where
+ * you are -- rather than a fourth thing it has been asked to mean.
+ */
+function Field({
+  label,
+  ...input
+}: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <label className="block">
+      <span className="t-wire block pb-2 text-ink-mute">{label}</span>
+      <input
+        {...input}
+        className="t-read block w-full rounded-none border-0 border-b border-rule bg-transparent pb-2 text-ink outline-none transition-colors focus:border-spot"
+      />
+    </label>
+  );
+}
+
+/**
+ * A message on the line, in the second colour.
+ *
+ * The old error box was `border-red-300 bg-red-50 text-red-700` -- a fourth
+ * colour that exists nowhere else in the design, and one with no dark variant
+ * at all, so on the night run it rendered as a light panel on a dark page.
+ *
+ * On a two-colour press an alarm is not a new hue, it is the spot ink used as
+ * one. Errors get the spot rule, notices get the plain one: they are told
+ * apart by structure rather than by asking a reader to distinguish two
+ * colours.
+ */
+function Note({ tone, children }: { tone: "error" | "notice"; children: React.ReactNode }) {
+  return (
+    <p
+      role={tone === "error" ? "alert" : "status"}
+      className={`t-read border-l-2 pl-4 ${
+        tone === "error" ? "border-spot text-ink" : "border-rule text-ink-mute"
+      }`}
+    >
+      {children}
+    </p>
+  );
+}
 
 export function AuthForm({ mode }: { mode: Mode }) {
   const copy = COPY[mode];
@@ -65,83 +118,75 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
   if (!authConfigured) {
     return (
-      <div className="mx-auto max-w-sm pt-12 text-sm text-ink-mute">
-        <p>
-          Auth is not configured. Add <code>VITE_SUPABASE_URL</code> and{" "}
-          <code>VITE_SUPABASE_ANON_KEY</code> to <code>.env</code>, then restart{" "}
-          <code>make web</code>.
+      <div className="max-w-[34rem] pt-12">
+        <h1 className="t-display text-[clamp(1.75rem,4vw,2.75rem)] leading-[1.02]">
+          The presses are not wired up.
+        </h1>
+        <p className="t-read pt-4 text-ink-mute">
+          Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code>{" "}
+          to <code>.env</code>, then restart <code>make web</code>.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-sm pt-12">
-      <h1 className="text-xl font-semibold text-ink">
+    <div className="max-w-[30rem] pt-12">
+      <h1 className="t-display text-[clamp(1.875rem,4.4vw,3rem)] leading-[0.98]">
         {copy.title}
       </h1>
 
-      <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-3">
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-ink-mute">
-            Email
-          </span>
-          <input
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="rounded border border-rule bg-paper-lift px-3 py-2 text-sm
-                       text-ink outline-none focus:border-spot
-                      "
-          />
-        </label>
+      {copy.standfirst && (
+        <p className="t-wire pt-4 text-ink-mute">{copy.standfirst}</p>
+      )}
+      {copy.deck && (
+        <p className="t-read max-w-[42ch] pt-4 text-ink-mute">{copy.deck}</p>
+      )}
 
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-ink-mute">
-            Password
-          </span>
-          <input
-            type="password"
-            required
-            minLength={6}
-            // Tells password managers whether to offer a saved password or
-            // generate a new one.
-            autoComplete={mode === "signup" ? "new-password" : "current-password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="rounded border border-rule bg-paper-lift px-3 py-2 text-sm
-                       text-ink outline-none focus:border-spot
-                      "
-          />
-        </label>
+      <form onSubmit={onSubmit} className="flex flex-col gap-7 pt-10">
+        <Field
+          label="Email"
+          type="email"
+          required
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
 
-        {error && (
-          <p className="rounded border border-red-300 bg-red-50 p-2 text-xs text-red-700">
-            {error}
-          </p>
-        )}
-        {notice && (
-          <p className="rounded border border-rule p-2 text-xs text-ink-mute">
-            {notice}
-          </p>
-        )}
+        <Field
+          label="Password"
+          type="password"
+          required
+          minLength={6}
+          // Tells password managers whether to offer a saved password or
+          // generate a new one.
+          autoComplete={mode === "signup" ? "new-password" : "current-password"}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
 
+        {error && <Note tone="error">{error}</Note>}
+        {notice && <Note tone="notice">{notice}</Note>}
+
+        {/* The one filled object in the whole design, and that is exactly why
+            it reads as the action. The accent budget allows it because there
+            is precisely one per page and it is what the page is for -- square,
+            because nothing else here has a corner radius. */}
         <button
           type="submit"
           disabled={busy}
-          className="mt-1 rounded-full bg-spot px-4 py-2.5 text-sm font-semibold text-white
-                     transition-opacity hover:opacity-90 disabled:opacity-40
-                     focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
+          className="t-wire w-full cursor-pointer bg-spot px-4 py-4 text-paper transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot disabled:opacity-40"
         >
           {busy ? "Working…" : copy.submit}
         </button>
       </form>
 
-      <p className="mt-4 text-xs text-ink-mute">
-        {copy.altPrompt}{" "}
-        <Link to={copy.altTo} className="underline">
+      <p className="t-wire flex flex-wrap items-baseline gap-2 pt-8 text-ink-mute">
+        {copy.altPrompt}
+        <Link
+          to={copy.altTo}
+          className="border-b border-spot pb-0.5 text-ink hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
+        >
           {copy.altLabel}
         </Link>
       </p>
