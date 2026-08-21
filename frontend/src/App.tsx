@@ -1,77 +1,24 @@
-import { Link, Outlet, Route, Routes } from "react-router-dom";
+import { Outlet, Route, Routes } from "react-router-dom";
 import { AuthPage } from "./components/AuthPage";
 import { BriefPage } from "./components/BriefPage";
-import { PressShell } from "./components/PressShell";
 import { FavoritesPage } from "./components/FavoritesPage";
 import { Feed } from "./components/Feed";
+import { PressShell } from "./components/PressShell";
 import { SettingsPage } from "./components/SettingsPage";
 import { StoryPage } from "./components/StoryPage";
-import { ThemeToggle } from "./components/ThemeToggle";
 import { UserPage } from "./components/UserPage";
-import { useAuth } from "./lib/auth";
-
-function HeaderAuth() {
-  const { email, loading, signOut } = useAuth();
-
-  // Render nothing rather than a flash of "Sign in" for an already-logged-in
-  // user while the session is being restored from storage.
-  if (loading) return null;
-
-  if (!email) {
-    return (
-      <nav className="flex items-center gap-1">
-        <Link
-          to="/stories"
-          className="t-footnote rounded-full px-3 py-1.5 font-medium text-label-2 transition-colors hover:bg-fill hover:text-label focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          Stories
-        </Link>
-        <Link
-          to="/login"
-          className="t-footnote rounded-full px-3 py-1.5 font-medium text-label-2 transition-colors hover:bg-fill hover:text-label focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          Sign in
-        </Link>
-        <Link
-          to="/signup"
-          className="t-footnote rounded-full bg-accent px-3.5 py-1.5 font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          Get started
-        </Link>
-      </nav>
-    );
-  }
-
-  return (
-    <nav className="flex items-center gap-1">
-      <Link
-        to="/stories"
-        className="t-footnote rounded-full px-3 py-1.5 font-medium text-label-2 transition-colors hover:bg-fill hover:text-label focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-      >
-        Stories
-      </Link>
-      <Link
-        to="/settings"
-        className="t-footnote rounded-full px-3 py-1.5 font-medium text-label-2 transition-colors hover:bg-fill hover:text-label focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-      >
-        Teams
-      </Link>
-      <button
-        onClick={signOut}
-        className="t-footnote rounded-full px-3 py-1.5 font-medium text-label-3 transition-colors hover:bg-fill hover:text-label focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-      >
-        Sign out
-      </button>
-    </nav>
-  );
-}
 
 /**
  * Paper, as a layout route.
  *
- * Wrapping each route in <PressShell> by hand worked for the two auth pages
- * and stops working at four feed routes. Listing a page here is how it joins
- * the paper from now on.
+ * There is one shell now. The app shell this replaced capped content at
+ * max-w-5xl and floated a backdrop-blurred bar over it, which is the exact
+ * thing the design says depth must never come from -- and it carried a second
+ * copy of the account nav and a second theme control, so the same two
+ * decisions were made twice and drifted. Its header also overflowed a 390px
+ * viewport by 25px, which no amount of restyling was going to fix.
+ *
+ * Listing a page here is how it joins the paper.
  */
 function PressLayout() {
   return (
@@ -81,81 +28,37 @@ function PressLayout() {
   );
 }
 
-/**
- * The chrome for everything that is not the brief.
- *
- * Settings and auth are app screens and keep the app's surfaces: a sticky bar,
- * rounded controls, the canvas/surface/label palette. The brief does not,
- * which is why it is routed around this shell rather than inside it.
- */
-function AppShell() {
-  return (
-    <div className="min-h-screen">
-      {/* A single hairline separates the bar from the content -- no shadow,
-          no fill beyond the blur. The bar should be felt, not seen. */}
-      <header className="sticky top-0 z-40 border-b border-separator bg-canvas/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-5 sm:px-8">
-          <Link
-            to="/"
-            className="flex items-baseline gap-2 rounded focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
-          >
-            <span className="t-headline tracking-tight text-label">
-              Sportswake
-            </span>
-          </Link>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <span
-              aria-hidden="true"
-              className="hidden h-4 w-px bg-separator sm:block"
-            />
-            <HeaderAuth />
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-5xl px-5 py-8 sm:px-8 sm:py-10">
-        <Routes>
-          <Route path="/favorites" element={<FavoritesPage />} />
-          <Route path="/u/:handle" element={<UserPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
-  // The brief is rendered outside the shell on purpose. The shell caps content
-  // at max-w-5xl and floats a backdrop-blurred bar over the top; the brief is
-  // set on a 1180px column and its whole visual argument is that depth comes
-  // from hairlines and paper tone, never from a translucent panel. It carries
-  // its own masthead, which is where the account links and theme control live
-  // on that route.
+  // The brief is the one route outside the layout, because it is the only page
+  // that has a dateline to put in its masthead -- it passes the filed time of
+  // the edition on the page, where every other page carries today's date.
   return (
     <Routes>
       <Route path="/" element={<BriefPage />} />
 
-      {/* Everything printed on paper. The feed's browsing controls are set as
-          press furniture now, so it belongs here rather than under a
-          backdrop-blurred bar on grey. */}
       <Route element={<PressLayout />}>
+        {/* The feed that predates the brief, kept as a browsing surface:
+            every multi-outlet story, filterable by team and category. The two
+            filters compose; each combination is one Feed. */}
         <Route path="/stories" element={<Feed />} />
         <Route path="/stories/c/:category" element={<Feed />} />
         <Route path="/stories/t/:team" element={<Feed />} />
         <Route path="/stories/t/:team/c/:category" element={<Feed />} />
 
-        {/* Signing up is the second most important page in the product --
-            it is where a reader becomes a subscriber -- so it is printed on
-            the same paper as the front page, next to the front page. */}
+        {/* Signing up is the second most important page in the product -- it
+            is where a reader becomes a subscriber -- so it is printed on the
+            same paper as the front page, next to the front page. */}
         <Route path="/login" element={<AuthPage mode="login" />} />
         <Route path="/signup" element={<AuthPage mode="signup" />} />
 
         {/* The coverage timeline is the surface the design doc calls the
             differentiator, so the story page gets the full measure. */}
         <Route path="/story/:storyId" element={<StoryPage />} />
+
+        <Route path="/favorites" element={<FavoritesPage />} />
+        <Route path="/u/:handle" element={<UserPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
-      <Route path="*" element={<AppShell />} />
     </Routes>
   );
 }

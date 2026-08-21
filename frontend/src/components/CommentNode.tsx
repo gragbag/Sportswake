@@ -101,15 +101,15 @@ export function CommentNode({
 
         <div className="min-w-0 flex-1">
           {gone ? (
-            <p className="text-sm italic text-ink-500 dark:text-white/40">
+            <p className="t-read text-ink-mute italic">
               {node.status === "deleted" ? "[deleted]" : "[removed]"}
             </p>
           ) : (
             <>
-              <div className="flex items-baseline gap-2 text-[11px] text-ink-500 dark:text-white/40">
+              <div className="t-wire flex items-baseline gap-2 text-ink-mute">
                 <Link
                   to={`/u/${node.author}`}
-                  className="font-medium text-ink-900/80 hover:underline dark:text-white/70"
+                  className="text-ink decoration-1 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
                 >
                   {isMine ? "You" : node.author}
                 </Link>
@@ -124,36 +124,34 @@ export function CommentNode({
                     onChange={(e) => setDraft(e.target.value)}
                     rows={3}
                     maxLength={MAX_LENGTH}
-                    className="w-full rounded border border-ink-200 bg-white px-2 py-1 text-sm
-                               text-ink-900 outline-none focus:border-ink-500
-                               dark:border-white/10 dark:bg-white/5 dark:text-white"
+                    className="t-read w-full rounded-none border border-rule bg-paper-lift px-3 py-2 text-ink outline-none transition-colors focus:border-spot"
                   />
-                  <div className="mt-1 flex gap-2 text-[11px]">
+                  <div className="t-wire mt-2 flex gap-2 text-ink-mute">
                     <button
                       type="submit"
                       disabled={busy || !draft.trim()}
-                      className="underline disabled:opacity-40"
+                      className="cursor-pointer text-ink hover:underline disabled:opacity-40"
                     >
                       Save
                     </button>
-                    <button type="button" onClick={() => setEditing(false)} className="underline">
+                    <button type="button" onClick={() => setEditing(false)} className="cursor-pointer hover:text-ink">
                       Cancel
                     </button>
                   </div>
                 </form>
               ) : (
-                <p className="mt-1 whitespace-pre-wrap text-sm leading-snug text-ink-900 dark:text-white/90">
+                <p className="t-read mt-1.5 whitespace-pre-wrap text-ink">
                   {node.body}
                 </p>
               )}
             </>
           )}
 
-          <div className="mt-1 flex gap-3 text-[11px] text-ink-500 dark:text-white/40">
+          <div className="t-wire mt-2 flex gap-3 text-ink-mute">
             {/* Replies stop at the depth cap -- offering a button that
                 always 422s would be worse than not offering one. */}
             {session && !editing && node.depth < MAX_DEPTH && (
-              <button onClick={() => setReplying(!replying)} className="hover:underline">
+              <button onClick={() => setReplying(!replying)} className="cursor-pointer hover:text-ink">
                 {replying ? "Cancel" : "Reply"}
               </button>
             )}
@@ -164,16 +162,16 @@ export function CommentNode({
                     setDraft(node.body ?? "");
                     setEditing(true);
                   }}
-                  className="hover:underline"
+                  className="cursor-pointer hover:text-ink"
                 >
                   Edit
                 </button>
-                <button onClick={() => void remove()} disabled={busy} className="hover:underline">
+                <button onClick={() => void remove()} disabled={busy} className="cursor-pointer hover:text-ink">
                   Delete
                 </button>
               </>
             )}
-            {error && <span className="text-red-600">{error}</span>}
+            {error && <span className="text-spot">{error}</span>}
           </div>
 
           {replying && (
@@ -184,15 +182,12 @@ export function CommentNode({
                 rows={2}
                 maxLength={MAX_LENGTH}
                 placeholder="Reply"
-                className="w-full rounded border border-ink-200 bg-white px-2 py-1 text-sm
-                           text-ink-900 outline-none focus:border-ink-500
-                           dark:border-white/10 dark:bg-white/5 dark:text-white"
+                className="t-read w-full rounded-none border border-rule bg-paper-lift px-3 py-2 text-ink outline-none transition-colors focus:border-spot"
               />
               <button
                 type="submit"
                 disabled={busy || !draft.trim()}
-                className="mt-1 rounded bg-label px-2 py-1 text-[11px] font-medium text-surface
-                           disabled:opacity-40"
+                className="t-wire mt-2 cursor-pointer bg-spot px-3 py-2 text-paper transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 {busy ? "Posting…" : "Reply"}
               </button>
@@ -202,7 +197,7 @@ export function CommentNode({
           {node.replies.length > 0 && (
             // Indent with a rule rather than margin alone: at depth 3 the
             // nesting is hard to follow without a visible spine.
-            <ol className="mt-2 border-l border-ink-200 pl-3 dark:border-white/10">
+            <ol className="mt-3 border-l border-rule pl-4">
               {node.replies.map((child) => (
                 <CommentNode
                   key={child.id}

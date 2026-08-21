@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, useAuth } from "../lib/auth";
 import { CommentNode } from "./CommentNode";
+import { SlugRule } from "./press";
 import type { Comment, CommentNodeData } from "../types";
 
 const MAX_LENGTH = 2000;
@@ -85,17 +86,18 @@ export function CommentThread({ storyId }: { storyId: string }) {
   const tree = comments ? buildTree(comments) : null;
 
   return (
-    <section className="mt-10">
-      <h2 className="text-[11px] font-medium uppercase tracking-wide text-ink-500 dark:text-white/40">
-        Discussion{comments && comments.length > 0 ? ` · ${comments.length}` : ""}
-      </h2>
+    <section className="pt-12 md:pt-16">
+      <SlugRule
+        label="Discussion"
+        count={comments && comments.length > 0 ? comments.length : undefined}
+      />
 
       {tree === null ? (
-        <p className="mt-3 text-sm text-ink-500 dark:text-white/50">Loading&hellip;</p>
+        <p className="t-wire pt-6 text-ink-mute">Loading&hellip;</p>
       ) : tree.length === 0 ? (
-        <p className="mt-3 text-sm text-ink-500 dark:text-white/50">No comments yet.</p>
+        <p className="t-read pt-6 text-ink-mute">No comments yet.</p>
       ) : (
-        <ol className="mt-3">
+        <ol className="pt-6">
           {tree.map((node) => (
             <CommentNode
               key={node.id}
@@ -108,22 +110,19 @@ export function CommentThread({ storyId }: { storyId: string }) {
       )}
 
       {session ? (
-        <form onSubmit={onSubmit} className="mt-6">
+        <form onSubmit={onSubmit} className="pt-8">
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={3}
             placeholder="Add a comment"
-            className="w-full rounded border border-ink-200 bg-white px-3 py-2 text-sm
-                       text-ink-900 outline-none focus:border-ink-500
-                       dark:border-white/10 dark:bg-white/5 dark:text-white"
+            className="t-read w-full rounded-none border border-rule bg-paper-lift px-3 py-2 text-ink outline-none transition-colors focus:border-spot"
           />
           <div className="mt-2 flex items-center gap-3">
             <button
               type="submit"
               disabled={busy || !body.trim() || overLimit}
-              className="rounded bg-label px-3 py-1.5 text-xs font-medium text-surface
-                         disabled:opacity-40"
+              className="t-wire cursor-pointer bg-spot px-4 py-2.5 text-paper transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {busy ? "Posting…" : "Post"}
             </button>
@@ -131,19 +130,20 @@ export function CommentThread({ storyId }: { storyId: string }) {
                 reads as a warning when nothing is wrong. */}
             {remaining < 200 && (
               <span
-                className={`text-[11px] tabular-nums ${
-                  overLimit ? "text-red-600" : "text-ink-500 dark:text-white/40"
-                }`}
+                className={`t-wire ${overLimit ? "text-spot" : "text-ink-mute"}`}
               >
                 {remaining}
               </span>
             )}
-            {error && <span className="text-[11px] text-red-600">{error}</span>}
+            {error && <span className="t-wire text-spot">{error}</span>}
           </div>
         </form>
       ) : (
-        <p className="mt-6 text-sm text-ink-500 dark:text-white/50">
-          <Link to="/login" className="underline">
+        <p className="t-read pt-6 text-ink-mute">
+          <Link
+            to="/login"
+            className="border-b border-spot pb-0.5 text-ink hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
+          >
             Sign in
           </Link>{" "}
           to join the discussion.

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/auth";
-import { teamColor } from "../lib/teamColors";
 import type { TeamOption } from "../types";
 
 /**
@@ -10,6 +9,11 @@ import type { TeamOption } from "../types";
  * them or not, so following twelve costs nothing. What keeps a brief readable
  * is the render cap and the rule that a team with no news gets no section --
  * not a limit on this list.
+ *
+ * The chips are mono codes set in reverse type when followed -- marked up,
+ * the way a proof is. No colour dot: the code identifies the club better than
+ * a swatch does, and thirty brand palettes have no place on a page whose whole
+ * argument is that it prints in two colours.
  *
  * Draft-then-Save, not save-per-toggle. Toggling is pure local state; nothing
  * touches the network until Save, so a sixteen-click session is one PUT
@@ -46,7 +50,7 @@ export function TeamPicker() {
   }, []);
 
   if (!teams || !draft || !saved) {
-    return <p className="t-caption text-label-3">Loading…</p>;
+    return <p className="t-wire text-ink-mute">Loading…</p>;
   }
 
   function toggle(code: string) {
@@ -85,13 +89,11 @@ export function TeamPicker() {
 
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="t-caption text-label-2">Teams you follow</p>
-        <span className="flex items-center gap-2 text-xs text-label-3">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
+        <p className="t-wire text-ink">Teams you follow</p>
+        <span className="t-wire flex items-center gap-3 text-ink-mute">
           {error && (
-            <span className="text-red-600 dark:text-red-400">
-              Couldn&rsquo;t save &mdash; try again
-            </span>
+            <span className="text-spot">Couldn&rsquo;t save &mdash; try again</span>
           )}
           {!error && !dirty && `${draft.size} selected`}
           {dirty && (
@@ -100,7 +102,7 @@ export function TeamPicker() {
                 setDraft(new Set(saved));
                 setError(false);
               }}
-              className="rounded-full px-2 py-1 text-label-3 transition-colors hover:text-label focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="cursor-pointer text-ink-mute transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
             >
               Reset
             </button>
@@ -109,7 +111,7 @@ export function TeamPicker() {
             <button
               onClick={save}
               disabled={saving}
-              className="t-footnote rounded-full bg-accent px-3.5 py-1.5 font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              className="t-wire cursor-pointer bg-spot px-4 py-2 text-paper transition-opacity hover:opacity-90 disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
             >
               {saving ? "Saving…" : "Save"}
             </button>
@@ -117,7 +119,7 @@ export function TeamPicker() {
         </span>
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1.5 pt-1">
         {teams.map((t) => {
           const on = draft.has(t.code);
           return (
@@ -126,24 +128,19 @@ export function TeamPicker() {
               onClick={() => toggle(t.code)}
               aria-pressed={on}
               title={t.name}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+              className={`t-wire cursor-pointer border px-2.5 py-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot ${
                 on
-                  ? "border-accent bg-accent text-white"
-                  : "border-separator text-label-2 hover:border-label-3 dark:hover:border-label-3"
+                  ? "border-ink bg-ink text-paper"
+                  : "border-rule text-ink-mute hover:border-ink hover:text-ink"
               }`}
             >
-              <span
-                aria-hidden="true"
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ background: on ? "currentColor" : teamColor(t.code) }}
-              />
               {t.code}
             </button>
           );
         })}
       </div>
 
-      <p className="mt-3 text-xs text-label-3">
+      <p className="t-read mt-4 max-w-[60ch] text-[0.9375rem] text-ink-mute">
         You&rsquo;ll only see a team&rsquo;s section when something actually
         happened &mdash; following more never makes the brief longer by default.
         Changes apply once you save.

@@ -10,57 +10,32 @@
 @import "./styles/tokens.css";
 
 /* ---------------------------------------------------------------------------
-   A system, not a palette.
+   One system.
 
-   Colours are named for their ROLE (label, secondary label, separator, fill)
-   rather than their value, which is what lets light and dark be two settings
-   of one design instead of two designs. Greys are very slightly cool; pure
-   neutral grey reads as unconsidered on a white ground.
+   There were two. The newsprint tokens ran the brief and a parallel set --
+   canvas, surface, label, accent, plus a legacy ink-0..900 scale -- ran the
+   feed, the story page, settings, comments and auth. They were introduced to
+   coexist while the brief was a single route, and coexistence is exactly what
+   went wrong: two palettes, two type scales and two ideas about what a card
+   is, with every new component obliged to pick a side. The drift showed up as
+   ad-hoc text-[13px] and text-[15px] sizes, hardcoded dark:text-white/50
+   overrides, and an error panel painted in a red that had no dark value at all
+   and rendered as a light box on a dark page.
 
-   One accent. It appears only on selection, links and focus -- never as
-   decoration -- so its presence always means "this is interactive or this is
-   where you are".
+   The second system is gone. Everything the app draws now comes from
+   styles/tokens.css: paper, ink, rule, spot, veil, and the three faces.
 --------------------------------------------------------------------------- */
-@theme {
-  --color-canvas: #f4f6f9;
-  --color-surface: #ffffff;
-  --color-surface-2: #fbfcfe;
-
-  --color-label: #14161a;
-  --color-label-2: #5f6570;
-  --color-label-3: #949aa5;
-
-  --color-separator: #e4e8ee;
-  --color-fill: #edf1f6;
-
-  --color-accent: #2f57d8;
-  --color-accent-soft: #e9eeff;
-
-  --font-sans:
-    ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-    system-ui, sans-serif;
-  /* Reserved for the brief itself. Reading a piece of writing and operating an
-     interface are different jobs, and the typeface is the clearest way to say
-     which one you are doing. */
-  --font-read: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
-
-  /* Legacy ink scale, mapped onto the role tokens above. The stories pages
-     (Feed, StoryPage, favorites, comments) predate this design system and
-     name their greys by value; routing them through the role variables means
-     they follow the light/dark flip for free instead of carrying a second
-     palette. New components should use the role names directly. */
-  --color-ink-0: var(--color-surface);
-  --color-ink-50: var(--color-fill);
-  --color-ink-200: var(--color-separator);
-  --color-ink-500: var(--color-label-2);
-  --color-ink-900: var(--color-label);
-}
 
 /* Make `dark:` mean what the tokens mean: the toggle wins, the OS decides
    only when no choice was stamped. Tailwind's default dark variant is the
    media query alone, which ignores data-theme -- so a reader on a light OS
-   who chose dark got dark variables but light `dark:` utilities. Same
-   three-state logic as the token overrides in tokens.css, deliberately. */
+   who chose dark got dark variables but light `dark:` utilities.
+
+   Nothing uses a `dark:` utility today; the tokens flip themselves and a
+   component that also flips is a second opinion about the same decision. This
+   stays because the trap is silent: the day someone reaches for `dark:`
+   without it, they get a variant that disagrees with the theme control and
+   nothing errors. */
 @custom-variant dark {
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) & {
@@ -70,52 +45,6 @@
   :root[data-theme="dark"] & {
     @slot;
   }
-}
-
-/* Dark is a re-tune of the SAME tokens, declared as ordinary CSS rather than
-   a second @theme block. Tailwind hoists every @theme to the top level, so a
-   nested one does not stay inside its media query -- it silently replaces the
-   first, and the app renders one theme unconditionally. That is a quiet
-   failure worth naming, because nothing errors: you just get the wrong
-   palette for everyone.
-
-   Three states, not two. An explicit choice stamps data-theme on the root;
-   the default "system" setting stamps nothing, so only the media query
-   separates light from dark there. Each rule below covers one of those
-   cases, and the :not() guard is what lets an explicit light choice beat a
-   dark OS. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --color-canvas: #14161b;
-    --color-surface: #1c1f26;
-    --color-surface-2: #232730;
-
-    --color-label: #eef1f5;
-    --color-label-2: #a6adb9;
-    --color-label-3: #757d89;
-
-    --color-separator: #2f343e;
-    --color-fill: #252a33;
-
-    --color-accent: #8aa4ff;
-    --color-accent-soft: #212a45;
-  }
-}
-
-:root[data-theme="dark"] {
-  --color-canvas: #14161b;
-  --color-surface: #1c1f26;
-  --color-surface-2: #232730;
-
-  --color-label: #eef1f5;
-  --color-label-2: #a6adb9;
-  --color-label-3: #757d89;
-
-  --color-separator: #2f343e;
-  --color-fill: #252a33;
-
-  --color-accent: #8aa4ff;
-  --color-accent-soft: #212a45;
 }
 
 html {
@@ -130,109 +59,25 @@ html[data-theme="dark"] {
   color-scheme: dark;
 }
 
+/* The body is the paper, not a neutral ground the paper sits on. It used to
+   carry the app's canvas grey, which the shell's min-h-dvh covered up on a
+   full page and let through on a short one and under an overscroll bounce --
+   a band of the old design showing at the edges of the new one. */
 body {
-  background: var(--color-canvas);
-  color: var(--color-label);
-  font-family: var(--font-sans);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-news);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ---- type scale -------------------------------------------------------- */
-/* Fixed steps, used everywhere. Ad-hoc sizes are what make an interface feel
-   assembled rather than designed. */
-.t-large-title {
-  font-size: clamp(1.9rem, 4.2vw, 2.25rem);
-  line-height: 1.1;
-  font-weight: 700;
-  letter-spacing: -0.022em;
-}
-.t-title {
-  font-size: 1.3125rem;
-  line-height: 1.25;
-  font-weight: 650;
-  letter-spacing: -0.015em;
-}
-.t-headline {
-  font-size: 1.0625rem;
-  line-height: 1.35;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-.t-body {
-  font-size: 1.0625rem;
-  line-height: 1.5;
-  letter-spacing: -0.008em;
-}
-.t-callout {
-  font-size: 0.9375rem;
-  line-height: 1.45;
-  letter-spacing: -0.005em;
-}
-.t-footnote {
-  font-size: 0.8125rem;
-  line-height: 1.4;
-}
-.t-caption {
-  font-size: 0.6875rem;
-  line-height: 1.3;
-  font-weight: 600;
-  letter-spacing: 0.055em;
-  text-transform: uppercase;
-}
-
-.tnum {
-  font-variant-numeric: tabular-nums;
-}
-
-/* ---- the brief ---------------------------------------------------------- */
-.prose-brief {
-  font-family: var(--font-read);
-  font-size: 1.1875rem;
-  line-height: 1.65;
-  letter-spacing: -0.003em;
-}
-.prose-brief p + p {
-  margin-top: 1.05em;
-}
-
 /* ---- motion ------------------------------------------------------------- */
 /* One curve for everything. Decelerating, no overshoot: things arrive and
-   settle rather than bouncing. */
+   settle rather than bouncing. tokens.css builds the load sequence on it. */
 :root {
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-@keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 10px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes fade-down {
-  from {
-    opacity: 0;
-    transform: translate3d(0, -10px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes sheet-up {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 24px, 0) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
 @keyframes veil {
   from {
     opacity: 0;
@@ -242,15 +87,6 @@ body {
   }
 }
 
-.anim-up {
-  animation: fade-up 0.34s var(--ease) both;
-}
-.anim-down {
-  animation: fade-down 0.34s var(--ease) both;
-}
-.anim-sheet {
-  animation: sheet-up 0.36s var(--ease) both;
-}
 .anim-veil {
   animation: veil 0.24s linear both;
 }

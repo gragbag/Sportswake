@@ -28,8 +28,9 @@ export function FavoriteButton({ storyId }: { storyId: string }) {
       aria-pressed={saved}
       aria-label={saved ? "Remove from favorites" : "Save to favorites"}
       title={saved ? "Remove from favorites" : "Save to favorites"}
-      className="shrink-0 text-ink-500 transition-colors hover:text-ink-900
-                 dark:text-white/40 dark:hover:text-white"
+      className={`shrink-0 cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot ${
+        saved ? "text-spot" : "text-ink-mute hover:text-ink"
+      }`}
     >
       <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden="true">
         <path

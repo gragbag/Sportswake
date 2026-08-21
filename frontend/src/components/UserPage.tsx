@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { apiFetch } from "../lib/auth";
 import { timeAgo } from "../lib/time";
 import { VoteButtons } from "./VoteButtons";
+import { SlugRule } from "./press";
 import type { PublicProfile } from "../types";
 
 export function UserPage() {
@@ -23,49 +24,55 @@ export function UserPage() {
 
   if (error) {
     return (
-      <div className="text-sm text-ink-500 dark:text-white/50">
-        <p>{error}.</p>
-        <Link to="/" className="mt-2 inline-block underline">
-          Back to all stories
+      <div className="pt-8">
+        <h1 className="t-display text-[clamp(1.75rem,4vw,2.75rem)] leading-[1.02]">
+          {error}.
+        </h1>
+        <Link
+          to="/stories"
+          className="t-wire mt-6 inline-block border-b border-spot pb-1 text-ink hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
+        >
+          All stories
         </Link>
       </div>
     );
   }
 
   if (!profile) {
-    return <p className="text-sm text-ink-500 dark:text-white/50">Loading&hellip;</p>;
+    return <p className="t-wire pt-8 text-ink-mute">Loading&hellip;</p>;
   }
 
   return (
-    <div className="max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink-900 dark:text-white">
+    <div className="max-w-[68ch] pt-8">
+      <h1 className="t-display text-[clamp(1.75rem,4vw,2.5rem)] leading-[1.02]">
         {profile.handle}
       </h1>
-      <p className="mt-1 text-xs text-ink-500 dark:text-white/50">
+      <p className="t-wire pt-3 text-ink-mute">
         {profile.joined_at
           ? `Joined ${new Date(profile.joined_at).toLocaleDateString()}`
           : "No profile set up"}
         {profile.is_self && profile.history_hidden && " · your history is hidden from others"}
       </p>
 
-      <h2 className="mt-8 text-[11px] font-medium uppercase tracking-wide text-ink-500 dark:text-white/40">
-        Comments
-      </h2>
+      <div className="pt-10">
+        <SlugRule
+          label="Comments"
+          count={profile.comments.length > 0 ? profile.comments.length : undefined}
+        />
+      </div>
 
       {profile.history_hidden && !profile.is_self ? (
-        <p className="mt-3 text-sm text-ink-500 dark:text-white/50">
+        <p className="t-read pt-6 text-ink-mute">
           This user has chosen not to show their comment history.
         </p>
       ) : profile.comments.length === 0 ? (
-        <p className="mt-3 text-sm text-ink-500 dark:text-white/50">
-          No comments yet.
-        </p>
+        <p className="t-read pt-6 text-ink-mute">No comments yet.</p>
       ) : (
-        <ol className="mt-3">
+        <ol className="pt-2">
           {profile.comments.map((c) => (
             <li
               key={c.id}
-              className="flex gap-3 border-b border-ink-200 py-3 last:border-0 dark:border-white/10"
+              className="flex gap-4 border-t border-rule py-4"
             >
               {/* key includes the server's numbers so a refetch REMOUNTS this
                   and resets its internal state. Without it the component
@@ -82,14 +89,14 @@ export function UserPage() {
                     a fragment. */}
                 <Link
                   to={`/story/${c.story_id}`}
-                  className="text-[11px] text-ink-500 hover:underline dark:text-white/40"
+                  className="t-wire text-ink-mute hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
                 >
                   {c.story_title}
                 </Link>
-                <p className="mt-1 whitespace-pre-wrap text-sm leading-snug text-ink-900 dark:text-white/90">
+                <p className="t-read mt-1.5 whitespace-pre-wrap text-ink">
                   {c.body}
                 </p>
-                <div className="mt-1 text-[11px] text-ink-500 dark:text-white/40">
+                <div className="t-wire mt-2 text-ink-mute">
                   {timeAgo(c.created_at)}
                   {c.edited_at && " · edited"}
                 </div>

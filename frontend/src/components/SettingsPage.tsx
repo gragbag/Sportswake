@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { apiFetch, useAuth } from "../lib/auth";
 import type { Profile } from "../types";
 import { TeamPicker } from "./TeamPicker";
+import { SlugRule } from "./press";
 
 /** Mirrors the server's rule. The server is still the one that enforces it. */
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
@@ -90,13 +91,16 @@ export function SettingsPage() {
   }
 
   if (authLoading) {
-    return <p className="text-sm text-label-2">Loading&hellip;</p>;
+    return <p className="t-wire pt-8 text-ink-mute">Loading&hellip;</p>;
   }
 
   if (!session) {
     return (
-      <p className="text-sm text-label-2">
-        <Link to="/login" className="underline">
+      <p className="t-read pt-8 text-ink-mute">
+        <Link
+          to="/login"
+          className="border-b border-spot pb-0.5 text-ink hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
+        >
           Sign in
         </Link>{" "}
         to manage your account.
@@ -111,29 +115,30 @@ export function SettingsPage() {
       : null;
 
   return (
-    <div className="max-w-md">
-      <h1 className="text-xl font-semibold text-label">Settings</h1>
+    <div className="max-w-[42rem] pt-12">
+      <h1 className="t-display text-[clamp(1.875rem,4.4vw,3rem)] leading-[0.98]">
+        Settings.
+      </h1>
 
       {/* First, because it is the only setting that changes what you read. */}
-      <div className="mt-8 border-b border-separator pb-8 dark:border-separator">
-        <TeamPicker />
-      </div>
+      <section className="pt-10">
+        <SlugRule label="Your teams" />
+        <div className="pt-6">
+          <TeamPicker />
+        </div>
+      </section>
 
-      <dl className="mt-8 space-y-3 text-sm">
+      <dl className="pt-10">
         <div>
-          <dt className="text-[11px] uppercase tracking-wide text-label-2">
-            Email
-          </dt>
-          <dd className="text-label">{email}</dd>
+          <dt className="t-wire text-ink-mute">Email</dt>
+          <dd className="t-read pt-1 text-ink">{email}</dd>
         </div>
         <div>
-          <dt className="text-[11px] uppercase tracking-wide text-label-2">
-            Shown on your comments
-          </dt>
-          <dd className="text-label">
+          <dt className="t-wire pt-5 text-ink-mute">Shown on your comments</dt>
+          <dd className="t-read pt-1 text-ink">
             {profile?.handle ?? "…"}
             {profile && !profile.username && (
-              <span className="ml-2 text-[11px] text-label-2">
+              <span className="t-wire ml-2 text-ink-mute">
                 assigned &mdash; pick your own below
               </span>
             )}
@@ -141,11 +146,9 @@ export function SettingsPage() {
         </div>
       </dl>
 
-      <form onSubmit={onSubmit} className="mt-8">
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-label-2">
-            Username
-          </span>
+      <form onSubmit={onSubmit} className="pt-10">
+        <label className="block">
+          <span className="t-wire block pb-2 text-ink-mute">Username</span>
           <input
             value={draft}
             onChange={(e) => {
@@ -154,19 +157,17 @@ export function SettingsPage() {
             }}
             disabled={Boolean(lockedUntil)}
             placeholder="3-20 characters, letters, numbers, underscore"
-            className="rounded border border-separator bg-surface px-3 py-2 text-sm text-label
-                       outline-none focus:border-accent disabled:opacity-50
-                       dark:border-separator dark:bg-surface-2 dark:text-white"
+            className="t-read block w-full rounded-none border-0 border-b border-rule bg-transparent pb-2 text-ink outline-none transition-colors focus:border-spot disabled:opacity-50"
           />
         </label>
 
         {lockedUntil ? (
-          <p className="mt-2 text-[11px] text-label-2">
+          <p className="t-wire pt-3 text-ink-mute">
             You changed your username recently. You can change it again after{" "}
             {lockedUntil.toLocaleDateString()}.
           </p>
         ) : (
-          <p className="mt-2 text-[11px] text-label-2">
+          <p className="t-wire pt-3 text-ink-mute">
             Changing your username frees the old one for someone else, so this is
             limited to once a month.
           </p>
@@ -174,47 +175,42 @@ export function SettingsPage() {
 
         {available && (
           <p
-            className={`mt-1 text-[11px] ${
-              available.ok ? "text-label-2" : "text-red-600"
-            }`}
+            className={`t-wire pt-2 ${available.ok ? "text-ink-mute" : "text-spot"}`}
           >
             {available.ok ? `${draft.trim()} is available` : `Not available: ${available.why}`}
           </p>
         )}
 
-        <div className="mt-3 flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-4 pt-6">
           <button
             type="submit"
             disabled={busy || Boolean(lockedUntil) || !draft.trim() || draft.trim() === profile?.username}
-            className="rounded bg-accent px-3.5 py-2 text-xs font-semibold text-white
-                       disabled:opacity-40 "
+            className="t-wire cursor-pointer bg-spot px-5 py-3 text-paper transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             {busy ? "Saving…" : "Save"}
           </button>
           {saved && (
-            <span className="text-[11px] text-label-2">
+            <span className="t-wire text-ink-mute">
               Saved. Your name is updated on every comment you have posted.
             </span>
           )}
-          {error && <span className="text-[11px] text-red-600">{error}</span>}
+          {error && <span className="t-wire text-spot">{error}</span>}
         </div>
       </form>
 
-      <section className="mt-10 border-t border-separator pt-6 dark:border-separator">
-        <h2 className="text-[11px] font-medium uppercase tracking-wide text-label-2">
-          Privacy
-        </h2>
+      <section className="pt-12">
+        <SlugRule label="Privacy" />
 
-        <label className="mt-3 flex items-start gap-2">
+        <label className="flex items-start gap-3 pt-6">
           <input
             type="checkbox"
             checked={profile?.hide_comment_history ?? false}
             onChange={(e) => void setPrivacy(e.target.checked)}
-            className="mt-0.5"
+            className="mt-1 accent-spot"
           />
-          <span className="text-sm text-label">
+          <span className="t-read text-ink">
             Hide my comment history
-            <span className="mt-0.5 block text-[11px] text-label-2">
+            <span className="t-wire mt-1.5 block text-ink-mute">
               Your profile stops listing your comments. They stay visible on the
               stories where you posted them &mdash; hiding is not deleting.
             </span>
@@ -224,7 +220,7 @@ export function SettingsPage() {
         {profile && (
           <Link
             to={`/u/${profile.username ?? profile.user_id}`}
-            className="mt-3 inline-block text-[11px] text-label-2 underline dark:text-label-2"
+            className="t-wire mt-6 inline-block border-b border-spot pb-1 text-ink hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot"
           >
             View my public profile
           </Link>

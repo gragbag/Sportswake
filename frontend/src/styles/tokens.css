@@ -6,10 +6,10 @@
    a brief goes stale in twenty-four hours. Every value below comes from that
    world rather than from a UI palette.
 
-   These names are deliberately NEW names, parallel to the app's own tokens
-   (canvas, surface, label, accent) rather than replacing them: the settings
-   and auth pages still run on those, and the two systems have to coexist in
-   one bundle without either bleeding into the other.
+   These began as NEW names, parallel to an app palette (canvas, surface,
+   label, accent) that ran every page except the brief. That palette is gone
+   and these are the only colours the product has -- so a value here is not
+   one of two options a component may pick from, it is the decision.
 --------------------------------------------------------------------------- */
 @theme {
   --color-paper: #e4e1d6;

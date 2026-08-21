@@ -64,8 +64,9 @@ export function VoteButtons({
   }
 
   const base =
-    "transition-colors disabled:cursor-default disabled:opacity-40 " +
-    "text-ink-500 dark:text-white/40";
+    "cursor-pointer text-ink-mute transition-colors disabled:cursor-default " +
+    "disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 " +
+    "focus-visible:outline-spot";
 
   return (
     <div className="flex shrink-0 flex-col items-center gap-0.5">
@@ -74,21 +75,19 @@ export function VoteButtons({
         disabled={!session}
         aria-label="Upvote"
         aria-pressed={myVote === 1}
-        className={`${base} ${myVote === 1 ? "text-ink-900 dark:text-white" : "hover:text-ink-900 dark:hover:text-white"}`}
+        className={`${base} ${myVote === 1 ? "text-spot" : "hover:text-ink"}`}
       >
         <Arrow up filled={myVote === 1} />
       </button>
 
-      <span className="text-[11px] tabular-nums text-ink-500 dark:text-white/50">
-        {score}
-      </span>
+      <span className="t-wire text-ink">{score}</span>
 
       <button
         onClick={() => cast(-1)}
         disabled={!session}
         aria-label="Downvote"
         aria-pressed={myVote === -1}
-        className={`${base} ${myVote === -1 ? "text-ink-900 dark:text-white" : "hover:text-ink-900 dark:hover:text-white"}`}
+        className={`${base} ${myVote === -1 ? "text-spot" : "hover:text-ink"}`}
       >
         <Arrow up={false} filled={myVote === -1} />
       </button>
