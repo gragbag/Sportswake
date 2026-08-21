@@ -20,12 +20,14 @@ const LINK =
 type NavItem = { to: string; label: string; lead?: boolean };
 
 const ANON: NavItem[] = [
+  { to: "/", label: "Brief" },
   { to: "/stories", label: "Stories" },
   { to: "/login", label: "Sign in" },
   { to: "/signup", label: "Get started", lead: true },
 ];
 
 const MEMBER: NavItem[] = [
+  { to: "/", label: "Brief" },
   { to: "/stories", label: "Stories" },
   { to: "/settings", label: "Teams" },
 ];
@@ -81,6 +83,44 @@ function PressRun() {
 }
 
 /**
+ * The flag, which is also the way back.
+ *
+ * It was a plain span, which was correct for exactly as long as the masthead
+ * only ever rendered on the brief -- a flag that links to the page you are
+ * already reading is furniture nobody checked. The moment this became the
+ * masthead for every page, that assumption turned into a dead end: /stories
+ * had no link to "/" anywhere on it, and the only way back to the front page
+ * was the browser's back button.
+ *
+ * Clicking the paper's name to get to the front page is the oldest convention
+ * on the web and readers try it first, so it is restored here -- and the nav
+ * names the brief as well, because a convention you have to already know is
+ * not the same as a way in that you can see.
+ */
+function Flag({ home }: { home: boolean }) {
+  const name = (
+    <>
+      <span className="t-display block text-[1.375rem] text-ink">
+        Sportswake
+      </span>
+      <span className="t-wire mt-1 block text-ink-mute">NBA, every morning</span>
+    </>
+  );
+
+  if (home) return <div>{name}</div>;
+
+  return (
+    <Link
+      to="/"
+      aria-label="Sportswake — today's brief"
+      className="group block decoration-1 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-spot"
+    >
+      <span className="group-hover:underline">{name}</span>
+    </Link>
+  );
+}
+
+/**
  * The flag and the dateline, over a hairline.
  *
  * A masthead, so it carries the paper's furniture as well as its name: the
@@ -108,14 +148,7 @@ export function Masthead({
   return (
     <header>
       <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-4 pt-8 pb-4">
-        <div>
-          <span className="t-display block text-[1.375rem] text-ink">
-            Sportswake
-          </span>
-          <span className="t-wire mt-1 block text-ink-mute">
-            NBA, every morning
-          </span>
-        </div>
+        <Flag home={pathname === "/"} />
 
         <div className="flex flex-col gap-2 sm:items-end">
           <time className="t-wire text-ink-mute" dateTime={stamp}>
