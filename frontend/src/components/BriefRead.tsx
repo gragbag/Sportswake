@@ -99,7 +99,7 @@ export function BriefRead() {
 
   if (!section) {
     return (
-      <PressShell generatedAt={brief.generated_at ?? null}>
+      <PressShell>
         {back}
         <h1 className="t-display max-w-[24ch] pt-8 text-[clamp(1.75rem,4vw,2.75rem)] leading-[1.02]">
           Nothing filed under that.
@@ -120,7 +120,7 @@ export function BriefRead() {
   const article = splitArticle(section.body_md);
 
   return (
-    <PressShell generatedAt={filed} stale={brief.is_stale}>
+    <PressShell>
       {/* Size and measure both come from .read-column, so they cannot drift. */}
       <div className="read-column mx-auto">
         {back}

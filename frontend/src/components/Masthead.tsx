@@ -1,7 +1,6 @@
 import { Fragment } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
-import { formatClock, formatDayStamp } from "../lib/dateline";
 
 const LINK =
   "hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot";
@@ -48,69 +47,59 @@ const MEMBER: NavItem[] = [
  */
 function Flag({ home }: { home: boolean }) {
   const name = (
-    <>
-      <span className="t-display block text-[1.375rem] text-ink">
-        Sportswake
-      </span>
-      <span className="t-wire mt-1 block text-ink-mute">NBA, every morning</span>
-    </>
+    <span className="t-display block text-[1.375rem] text-ink">Sportswake</span>
   );
 
-  if (home) return <div>{name}</div>;
+  if (home) return name;
 
   return (
     <Link
       to="/"
       aria-label="Sportswake — today's brief"
-      className="group block decoration-1 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-spot"
+      className="block decoration-1 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-spot"
     >
-      <span className="group-hover:underline">{name}</span>
+      {name}
     </Link>
   );
 }
 
 /**
- * The flag and the dateline, over a hairline.
+ * The nameplate, over a line of furniture, over a hairline.
  *
- * A masthead, so it carries the paper's furniture as well as its name: the
- * account links and the press run sit up here in mono, quiet enough to ignore
- * and findable when wanted. That is why this page does not use the app's
- * sticky blurred bar -- a translucent panel floating over newsprint would
- * undo the argument the whole page is making, that depth comes from hairlines
+ * No sticky blurred bar: a translucent panel floating over newsprint would
+ * undo the argument the whole design makes, that depth comes from hairlines
  * and paper tone alone.
  *
- * The dateline is the filed time of the edition on the page, not the clock: a
- * masthead carries the date of what is printed beneath it.
+ * It used to carry a dateline, and that was the source of most of what was
+ * wrong with this corner. The docstring claimed it was "the filed time of the
+ * edition on the page, not the clock" -- but generatedAt fell back to
+ * new Date(), so on four routes out of six it was exactly the clock it said
+ * it was not. And where it WAS a real dateline, the page already printed one:
+ * the front page in BriefMeta under the plate, the reading page in its slug
+ * line, sign-up in the plate beside the form. Redundant wherever it was true,
+ * wrong wherever it was not, and it left the corner as two right-aligned runs
+ * of very different lengths with a ragged edge between them. An edition's
+ * date belongs with the edition.
+ *
+ * What is left is a nameplate on its own line and one band of furniture under
+ * it: the slogan and the links sharing a baseline, which is what a paper puts
+ * beneath its masthead.
  */
-export function Masthead({
-  generatedAt,
-  stale,
-}: {
-  generatedAt: string | null;
-  stale?: boolean;
-}) {
+export function Masthead() {
   const { email, loading, signOut } = useAuth();
   const { pathname } = useLocation();
-  const stamp = generatedAt ?? new Date().toISOString();
   const items = email ? MEMBER : ANON;
 
   return (
     <header>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-4 pt-8 pb-4">
+      <div className="pt-8 pb-4">
         <Flag home={pathname === "/"} />
 
-        <div className="flex flex-col gap-2 sm:items-end">
-          <time className="t-wire text-ink-mute" dateTime={stamp}>
-            {formatDayStamp(stamp)}
-            <span aria-hidden="true"> · </span>
-            {formatClock(stamp)}
-            {stale && (
-              <>
-                <span aria-hidden="true"> · </span>
-                most recent
-              </>
-            )}
-          </time>
+        {/* The slogan and the links share one baseline, so the two 11px runs
+            read as a single band rather than as two things right-aligned
+            against each other across a gap. */}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-2 pt-2">
+          <span className="t-wire text-ink-mute">NBA, every morning</span>
 
           <nav
             aria-label="Account"

@@ -284,7 +284,7 @@ export function BriefPage() {
   }
 
   return (
-    <PressShell generatedAt={lead.generatedAt} stale={brief.is_stale}>
+    <PressShell>
       {/* Keyed on the slot: switching editions remounts the subtree, so the
             load sequence replays and IS the transition. A wrapper fade on top
             of it would be a second opinion about the same movement. */}
