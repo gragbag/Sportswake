@@ -59,6 +59,38 @@ const DANGLING =
   /\s+(of|to|a|an|the|and|or|in|on|at|by|for|with|from|as|that|into|over|after|before|than)$/i;
 
 /**
+ * The opening sentence of a body, allowing for abbreviations.
+ *
+ * A bare first-sentence regex cuts "The Oct. 30 game will open the
+ * tournament's group stage" after "Oct." -- which produced the headline
+ * "The Oct" and a standfirst starting "30 game will open". So a candidate
+ * that is implausibly short, or that ends on something shaped like an
+ * abbreviation, keeps reading.
+ *
+ * This runs for the front page and the reading page both, and on the reading
+ * page it also decides what is REMOVED from the body: a bad split there would
+ * leave the article opening mid-phrase, which is worse than a bad headline.
+ */
+const SENTENCE = /[^.!?]+[.!?]+(?:\s|$)/g;
+const ABBREV = /\b(?:[A-Z][a-z]{0,3}|No|Mr|Mrs|Ms|Dr|St|vs)\.\s*$/;
+
+function firstSentence(text: string): string {
+  SENTENCE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = SENTENCE.exec(text)) !== null) {
+    // Sliced from 0 rather than accumulated from match[0], because the match
+    // is NOT necessarily a prefix: the pattern requires whitespace after the
+    // stop, so it steps straight over "$12.5 billion" and starts matching at
+    // "5 billion...". Concatenating those matches built a string that was
+    // never in the text, and every offset taken from its length landed
+    // mid-word -- bodies opened on "cord by a wide margin."
+    const candidate = text.slice(0, match.index + match[0].length);
+    if (!ABBREV.test(candidate)) return candidate;
+  }
+  return "";
+}
+
+/**
  * Split the opening of a brief into a headline and the line under it.
  *
  * The sections are generated prose and carry no headline of their own, so the
@@ -75,22 +107,31 @@ export function splitLead(md: string): { headline: string; standfirst: string } 
   const text = plain(md);
   if (!text) return { headline: "", standfirst: "" };
 
-  const sentences = text.match(/[^.!?]+[.!?]+(\s|$)/g)?.map((s) => s.trim()) ?? [
-    text,
-  ];
-
-  let headline = sentences[0] ?? text;
-  let rest = sentences.slice(1).join(" ").trim();
+  const opening = firstSentence(text);
+  let headline = (opening || text).trim();
+  let rest = text.slice(opening.length).trim();
 
   if (headline.length > HEAD_MAX) {
     // Look a little past the limit for a clause boundary before falling back
     // to the last whole word.
+    //
+    // The mark is searched for inside `reach` but the character AFTER it is
+    // read from the full headline, which is the whole point: lastIndexOf(", ")
+    // needs both characters inside the window, so a comma landing exactly on
+    // the last index of `reach` could never be found and the cut fell back to
+    // a word boundary. That is not a rare alignment -- it is what produced
+    // "The NBA landscape has undergone significant structural" on the front
+    // page, where the real clause ended four words later at "...this week,".
     const reach = headline.slice(0, HEAD_MAX + 14);
-    const clause = Math.max(
-      reach.lastIndexOf(", "),
-      reach.lastIndexOf("; "),
-      reach.lastIndexOf(" — "),
-    );
+    const clauseAt = (mark: string): number => {
+      for (let i = reach.length - 1; i >= 0; i -= 1) {
+        // Requiring a following space is what keeps "$12.5", "2026-27" and
+        // "17.8 percent" from reading as clause boundaries.
+        if (reach[i] === mark && headline[i + 1] === " ") return i;
+      }
+      return -1;
+    };
+    const clause = Math.max(clauseAt(","), clauseAt(";"), clauseAt("—"));
     const cut = clause > 24 ? clause : reach.lastIndexOf(" ", HEAD_MAX);
     // Trim the head to its FINAL printed form before measuring what carries
     // down, so that whatever the trims remove lands in the standfirst instead
@@ -134,6 +175,39 @@ export function splitLead(md: string): { headline: string; standfirst: string } 
   }
 
   return { headline, standfirst: rest };
+}
+
+/**
+ * A brief section as an article: headline, deck, and the body under them.
+ *
+ * The reading page used to title itself "Night brief", which names the section
+ * rather than saying anything, and the front page's headline -- the one the
+ * reader just clicked -- was thrown away on arrival.
+ *
+ * It is set as a real article instead. The catch is that the headline is cut
+ * FROM this text, so printing both sets the same words twice; the opening
+ * sentence is therefore lifted out of the body rather than repeated. Headline
+ * plus deck reconstitute it exactly, which is the arrangement a newspaper
+ * already uses: the head is a condensation, the deck carries the rest of the
+ * thought, and the story starts at the second sentence.
+ */
+export function splitArticle(md: string): {
+  headline: string;
+  deck: string;
+  body: string;
+} {
+  const paragraphs = md.split(/\n\s*\n/);
+  const opening = firstSentence(paragraphs[0] ?? "");
+  if (!opening) return { headline: plain(md), deck: "", body: md };
+
+  const { headline, standfirst } = splitLead(opening);
+  const rest = (paragraphs[0] ?? "").slice(opening.length);
+  const body = [rest, ...paragraphs.slice(1)]
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .join("\n\n");
+
+  return { headline, deck: standfirst, body };
 }
 
 /** An edition built from the full brief, once it has been fetched. */
