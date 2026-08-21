@@ -1,8 +1,7 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { formatClock, formatDayStamp } from "../lib/dateline";
-import { readTheme, saveTheme, type Theme } from "../lib/theme";
 
 const LINK =
   "hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-spot";
@@ -31,56 +30,6 @@ const MEMBER: NavItem[] = [
   { to: "/stories", label: "Stories" },
   { to: "/settings", label: "Teams" },
 ];
-
-const THEMES: { value: Theme; label: string }[] = [
-  { value: "light", label: "Day" },
-  { value: "system", label: "Auto" },
-  { value: "dark", label: "Night" },
-];
-
-/**
- * Day / Auto / Night, as three words on a rule.
- *
- * Three options rather than a two-way switch, because "follow my OS" is a real
- * preference and a binary toggle silently overrides it forever after the first
- * tap. The selected one is simply set in full ink -- no pill, no fill, no
- * second accent, since the spot budget on this page is already spent on the
- * freshness rule, the live square and the focus ring.
- */
-function PressRun() {
-  const [theme, setTheme] = useState<Theme>("system");
-
-  // Read on mount rather than during render: localStorage is not available
-  // during a static prerender, and this should never be why a build breaks.
-  useEffect(() => setTheme(readTheme()), []);
-
-  return (
-    <div role="group" aria-label="Colour theme" className="flex items-center">
-      {THEMES.map(({ value, label }, i) => (
-        <span key={value} className="flex items-center">
-          {i > 0 && (
-            <span aria-hidden="true" className="px-1.5 text-rule">
-              /
-            </span>
-          )}
-          <button
-            type="button"
-            aria-pressed={theme === value}
-            onClick={() => {
-              setTheme(value);
-              saveTheme(value);
-            }}
-            className={`cursor-pointer ${LINK} ${
-              theme === value ? "text-ink" : ""
-            }`}
-          >
-            {label}
-          </button>
-        </span>
-      ))}
-    </div>
-  );
-}
 
 /**
  * The flag, which is also the way back.
@@ -209,15 +158,8 @@ export function Masthead({
                     </button>
                   </>
                 )}
-                {/* Inside the guard with the links it divides. Outside it,
-                    the session-restore frame rendered a leading rule with
-                    nothing before it. */}
-                <span aria-hidden="true" className="text-rule">
-                  |
-                </span>
               </>
             )}
-            <PressRun />
           </nav>
         </div>
       </div>

@@ -118,6 +118,22 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Form controls do not inherit the casing on their own. The browser's own
+     stylesheet declares text-transform: none on them DIRECTLY, and a direct
+     declaration beats an inherited value even when it is the UA's -- so every
+     <button> inside a wire block quietly opted out of the case its neighbours
+     were set in. That is why "Day / Auto / Night" sat in title case beside
+     "BRIEF · STORIES · SIGN IN", and why "Sign out", "More stories" and the
+     comment actions did the same. One line of type in two cases reads as
+     clutter long before anyone can say which half is wrong. */
+  .t-wire button,
+  .t-wire select,
+  .t-wire input,
+  .t-wire textarea {
+    text-transform: inherit;
+    letter-spacing: inherit;
+  }
+
   /* The brief itself, at reading size. Newsreader carries an optical-size axis,
      so running text asks for a larger opsz than the 17px standfirst does --
      that is the axis doing its job rather than one face scaled twice.

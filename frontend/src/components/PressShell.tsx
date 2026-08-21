@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Colophon } from "./Colophon";
 import { Masthead } from "./Masthead";
 
 /**
@@ -33,6 +34,7 @@ export function PressShell({
       <div className="mx-auto w-full max-w-[1180px] px-5 pb-24 lg:px-12">
         <Masthead generatedAt={generatedAt} stale={stale} />
         {children}
+        <Colophon />
       </div>
     </div>
   );
