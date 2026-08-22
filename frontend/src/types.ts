@@ -166,6 +166,15 @@ export type StoryArticle = {
  * A single story with every member article. Distinct from Story: the feed
  * gets outlet names and sparkline buckets, the page gets the real rows.
  */
+/** One reader's-voice count per reaction type. Always all five keys, zero-filled. */
+export type Reactions = {
+  like: number;
+  dislike: number;
+  happy: number;
+  sad: number;
+  angry: number;
+};
+
 export type StoryDetail = {
   id: string;
   title: string;
@@ -186,4 +195,7 @@ export type StoryDetail = {
   teams: Team[];
   /** Chronological, oldest first. */
   articles: StoryArticle[];
+  reactions: Reactions;
+  /** The viewer's own reaction, or null when signed out or unreacted. */
+  my_reaction: string | null;
 };

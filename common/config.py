@@ -214,6 +214,33 @@ IMPORTANCE_RECOMPUTE_WINDOW_DAYS: int = int(
     os.environ.get("IMPORTANCE_RECOMPUTE_WINDOW_DAYS", "4")
 )
 
+# ---- recommendations -----------------------------------------------------
+# How much a followed team can lift a story above pure importance.
+# Comparable in scale to the weights above (0.15-0.35), not larger: a
+# followed team should be able to promote a middling story past an
+# unfollowed major one, but a followed team's single-outlet aside should
+# not outrank the league's biggest story on team match alone. Multiplied by
+# story_teams.relevance (1.0 at rank 0, 0.5 at rank 1, ...), so being the
+# story's SUBJECT counts for more than being mentioned in passing.
+RECOMMEND_TEAM_WEIGHT: float = float(os.environ.get("RECOMMEND_TEAM_WEIGHT", "0.3"))
+# Same idea, one level down: a reader who keeps favoriting, reacting to, or
+# commenting on trade stories prefers trades, whichever team they concern.
+# Deliberately NOT reaction-sentiment-weighted -- which emoji someone picked
+# is not used, only that they engaged at all. See StoryReaction's docstring
+# for why: an angry reaction to bad news is not evidence of disinterest.
+RECOMMEND_CATEGORY_WEIGHT: float = float(
+    os.environ.get("RECOMMEND_CATEGORY_WEIGHT", "0.25")
+)
+# Interactions in one category before it reads as a real preference rather
+# than one story someone happened to click. Small on purpose: this has to
+# saturate fast to mean anything while the whole corpus holds a handful of
+# interactions total.
+RECOMMEND_CATEGORY_SATURATION: int = int(
+    os.environ.get("RECOMMEND_CATEGORY_SATURATION", "4")
+)
+# A horizontal shelf below the brief, not a second feed -- kept short.
+RECOMMEND_LIMIT: int = int(os.environ.get("RECOMMEND_LIMIT", "10"))
+
 
 # ---- briefs --------------------------------------------------------------
 # Sections are generated PER TEAM, never per user: one league section plus one

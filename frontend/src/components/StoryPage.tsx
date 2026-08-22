@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CommentThread } from "./CommentThread";
 import { FavoriteButton } from "./FavoriteButton";
+import { ReactionBar } from "./ReactionBar";
 import { StoryTimeline } from "./StoryTimeline";
 import { SlugRule } from "./press";
 import { timeAgo } from "../lib/time";
@@ -121,6 +122,12 @@ export function StoryPage() {
             {story.summary_subhead}
           </p>
         )}
+
+        <ReactionBar
+          storyId={story.id}
+          reactions={story.reactions}
+          myReaction={story.my_reaction}
+        />
 
         {story.summary_bullets && story.summary_bullets.length > 0 && (
           <section className="max-w-[68ch] pt-12">

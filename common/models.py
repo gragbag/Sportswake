@@ -12,6 +12,7 @@ from typing import Any
 from pgvector.sqlalchemy import HALFVEC
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Computed,
     Date,
     DateTime,
@@ -343,6 +344,44 @@ class Favorite(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "story_id", name="uq_favorites_user_story"),
         Index("ix_favorites_user_saved", "user_id", "saved_at"),
+    )
+
+
+_REACTIONS = ("like", "dislike", "happy", "sad", "angry")
+
+
+class StoryReaction(Base):
+    """One person's reaction to one story. Same shape as CommentVote, for the
+    same reason: one reaction per person per story is the rule, so the
+    composite key makes the database enforce it and changing your reaction
+    an upsert rather than a read-modify-write.
+
+    Engagement only, not personalization input -- deliberately. A reaction
+    tracks how a reader feels about the EVENT, not whether they want more
+    of that team's coverage, and for a fan those point opposite ways: a
+    Lakers loss draws the strongest reactions from the reader who most
+    wants MORE Lakers stories. Favorites and follows stay the signals that
+    drive recommendations; this table is for the reader's voice, no more.
+    """
+
+    __tablename__ = "story_reactions"
+
+    story_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("stories.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    # No FK -- auth.users is Supabase's own schema and does not exist here.
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    reaction: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "reaction in ('like','dislike','happy','sad','angry')",
+            name="ck_story_reactions_reaction",
+        ),
     )
 
 

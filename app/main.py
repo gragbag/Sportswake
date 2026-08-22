@@ -37,6 +37,10 @@ from common.config import (
     COMMENT_MAX_PER_HOUR,
     COMMENT_MAX_PER_STORY,
     COMMENT_PAGE_SIZE,
+    RECOMMEND_CATEGORY_SATURATION,
+    RECOMMEND_CATEGORY_WEIGHT,
+    RECOMMEND_LIMIT,
+    RECOMMEND_TEAM_WEIGHT,
     USERNAME_COOLDOWN_DAYS,
     USERNAME_RESERVED,
 )
@@ -392,6 +396,130 @@ def api_stories(
         return _attach_members(session, rows)
 
 
+@app.get("/api/recommendations")
+def api_recommendations(
+    viewer: Annotated[dict | None, Depends(optional_user)],
+    limit: int = RECOMMEND_LIMIT,
+) -> list[dict]:
+    """The horizontal shelf below the brief: stories worth surfacing that
+    the reader has not already met today.
+
+    score = importance_score
+          + RECOMMEND_TEAM_WEIGHT * team_relevance
+          + RECOMMEND_CATEGORY_WEIGHT * category_affinity
+
+    importance_score is the same computed signal the brief gates on --
+    corroboration, recency, authority, a linked game -- so this never
+    outranks genuine significance with a thin story just because it
+    matches a preference. team_relevance is story_teams.relevance (1.0 at
+    rank 0, 0.5 at rank 1, ...) for whichever followed team the story
+    concerns most. Both terms are zero for an anonymous reader or one with
+    nothing to personalize against yet, which is what makes this degrade to
+    a plain importance-ranked shelf rather than an empty one.
+
+    category_affinity is learned, not asked: for each category, count the
+    reader's own favorited, reacted-to, or commented-on stories carrying it
+    (rank-weighted like team_relevance -- a story's PRIMARY category counts
+    more than its secondary one), log-saturate that count to 0-1, and apply
+    it to a candidate story's own category the same way. Deliberately
+    reaction-sentiment-BLIND: only that an interaction happened counts, not
+    which emoji -- see StoryReaction's docstring on why "angry" is not
+    "less". Uses categories that already exist on every tagged story
+    (worker.categorize's output); no new model call anywhere in this.
+
+    Excluded, both to keep this a genuinely NEW shelf: every story in
+    today's already-filed brief sections (the reader just read those
+    above), and every story the reader has already favorited or reacted
+    to (they have already met those, personalized or not).
+    """
+    with Session() as session:
+        today = datetime.now(ZoneInfo(BRIEF_TZ)).date()
+        seen_ids = {
+            sid
+            for (ids,) in session.execute(
+                text("select cluster_ids from brief_sections where slot_date = :d"),
+                {"d": today},
+            ).all()
+            for sid in (ids or [])
+        }
+
+        followed: list[str] = []
+        interacted: list[str] = []
+        if viewer:
+            # One fetch of "what this reader has touched", used for two
+            # different questions below: which stories to exclude (already
+            # met), and which categories those stories carried (what their
+            # taste looks like). Same ids, different join.
+            interacted = [
+                r[0]
+                for r in session.execute(
+                    text("""
+                        select story_id::text from favorites where user_id = :uid
+                        union
+                        select story_id::text from story_reactions where user_id = :uid
+                        union
+                        select story_id::text from comments
+                        where user_id = :uid and status = 'visible'
+                    """),
+                    {"uid": viewer["sub"]},
+                ).all()
+            ]
+            seen_ids.update(interacted)
+
+            followed = [
+                r[0]
+                for r in session.execute(
+                    text("select team_code from user_teams where user_id = :uid"),
+                    {"uid": viewer["sub"]},
+                ).all()
+            ]
+
+        rows = session.execute(
+            text(f"""
+                with my_affinity as (
+                    select sc.category_slug,
+                           least(1.0, ln(1 + count(*))
+                                 / ln(1 + :cat_saturation)) as affinity
+                    from story_categories sc
+                    where sc.story_id = any(cast(:interacted as uuid[]))
+                    group by sc.category_slug
+                )
+                select {_CARD_COLUMNS},
+                       s.importance_score
+                         + :team_weight * coalesce(max(st.relevance) filter (
+                             where st.team_code = any(cast(:followed as text[]))
+                           ), 0)
+                         -- Rank-weighted like team_relevance: a story's
+                         -- PRIMARY category (rank 0) carries its affinity in
+                         -- full, a secondary one at half.
+                         + :category_weight * coalesce(
+                             max(ma.affinity / (sc.rank + 1)), 0
+                           ) as rec_score
+                from stories s
+                join story_members sm on sm.story_id = s.id
+                join articles a on a.id = sm.article_id
+                left join story_teams st on st.story_id = s.id
+                left join story_categories sc on sc.story_id = s.id
+                left join my_affinity ma on ma.category_slug = sc.category_slug
+                where s.id != all(cast(:seen as uuid[]))
+                group by s.id
+                having count(distinct a.outlet_id) >= 2
+                order by rec_score desc
+                limit :limit
+            """),
+            {
+                "team_weight": RECOMMEND_TEAM_WEIGHT,
+                "category_weight": RECOMMEND_CATEGORY_WEIGHT,
+                "cat_saturation": RECOMMEND_CATEGORY_SATURATION,
+                "followed": followed,
+                "interacted": interacted,
+                "seen": list(seen_ids),
+                "limit": limit,
+            },
+        ).all()
+        return _attach_members(session, rows)
+
+
 @app.get("/api/me")
 def api_me(user: Annotated[dict, Depends(current_user)]) -> dict:
     """Who the caller is, per their token. 401 when signed out.
@@ -739,6 +867,96 @@ def api_favorite_remove(
         )
         session.commit()
     return Response(status_code=204)
+
+
+_REACTIONS = ("like", "dislike", "happy", "sad", "angry")
+
+
+class ReactionIn(BaseModel):
+    reaction: str
+
+
+def _reaction_counts(session, story_id: str) -> dict[str, int]:
+    """Every reaction type, zero-filled, so the client never has to guard a
+    missing key -- the alternative is a dict with only the types someone has
+    actually clicked, which reads as broken on a story with one reaction."""
+    rows = session.execute(
+        text("""
+            select reaction, count(*) as n from story_reactions
+            where story_id = :sid group by reaction
+        """),
+        {"sid": story_id},
+    ).all()
+    counts = dict.fromkeys(_REACTIONS, 0)
+    counts.update({r.reaction: r.n for r in rows})
+    return counts
+
+
+@app.put("/api/stories/{story_id}/reaction")
+def api_reaction_set(
+    story_id: str, payload: ReactionIn, user: Annotated[dict, Depends(current_user)]
+) -> dict:
+    """Set (or change) the caller's reaction. PUT, not toggle-by-resending --
+    the client already holds its own current reaction in state, so it is the
+    one place that knows whether a click means "set" or "clear", and it
+    calls this or DELETE below accordingly. That is what lets this skip the
+    read-current-reaction round trip the earlier version paid on every
+    click: two round trips instead of four, which is most of the felt
+    latency when every one of them crosses to Supabase.
+
+    No existence pre-check either, for the same reason: the FK does that
+    for free on the rare path, and paying a round trip on every write to
+    guard against a story that is, in practice, always the one the reader
+    is looking at is the wrong trade.
+    """
+    _valid_uuid(story_id)
+    if payload.reaction not in _REACTIONS:
+        raise HTTPException(422, f"reaction must be one of {', '.join(_REACTIONS)}")
+
+    with Session() as session:
+        try:
+            # Upsert on the composite key: one reaction per person per
+            # story is the primary key, so a change can never create a
+            # second row.
+            session.execute(
+                text("""
+                    insert into story_reactions (story_id, user_id, reaction)
+                    values (:sid, :uid, :r)
+                    on conflict (story_id, user_id)
+                        do update set reaction = excluded.reaction
+                """),
+                {"sid": story_id, "uid": user["sub"], "r": payload.reaction},
+            )
+        except IntegrityError:
+            session.rollback()
+            raise HTTPException(404, "story not found") from None
+
+        counts = _reaction_counts(session, story_id)
+        session.commit()
+
+    return {"story_id": story_id, "reactions": counts, "my_reaction": payload.reaction}
+
+
+@app.delete("/api/stories/{story_id}/reaction")
+def api_reaction_clear(
+    story_id: str, user: Annotated[dict, Depends(current_user)]
+) -> dict:
+    """Clear. Deleting something already gone is a success, not a 404 --
+    same rule favorites follows, so a rapid double-click never surfaces an
+    error the reader did nothing wrong to earn."""
+    _valid_uuid(story_id)
+    with Session() as session:
+        session.execute(
+            text("""
+                delete from story_reactions
+                where story_id = :sid and user_id = :uid
+            """),
+            {"sid": story_id, "uid": user["sub"]},
+        )
+        counts = _reaction_counts(session, story_id)
+        session.commit()
+
+    return {"story_id": story_id, "reactions": counts, "my_reaction": None}
 
 
 class CommentIn(BaseModel):
@@ -1173,7 +1391,9 @@ def api_comment_create(
 
 
 @app.get("/api/stories/{story_id}")
-def api_story(story_id: str) -> dict:
+def api_story(
+    story_id: str, viewer: Annotated[dict | None, Depends(optional_user)]
+) -> dict:
     """One story, with every member article.
 
     Unlike /api/stories this returns the full member list rather than one
@@ -1245,6 +1465,19 @@ def api_story(story_id: str) -> dict:
             {"sid": story_id},
         ).all()
 
+        reactions = _reaction_counts(session, story_id)
+        my_reaction = (
+            session.execute(
+                text("""
+                    select reaction from story_reactions
+                    where story_id = :sid and user_id = :uid
+                """),
+                {"sid": story_id, "uid": viewer["sub"]},
+            ).scalar()
+            if viewer
+            else None
+        )
+
     span = (row.last_at - row.first_at).total_seconds()
     return {
         "id": str(row.id),
@@ -1263,6 +1496,8 @@ def api_story(story_id: str) -> dict:
         "span_hours": round(span / 3600, 1),
         "categories": [{"slug": c.slug, "label": c.label} for c in categories],
         "teams": [{"code": t.code, "name": t.name} for t in teams],
+        "reactions": reactions,
+        "my_reaction": my_reaction,
         "articles": [
             {
                 "outlet": a.outlet,

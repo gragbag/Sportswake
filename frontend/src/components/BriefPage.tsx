@@ -12,6 +12,7 @@ import type { Brief } from "../types";
 import { BriefMeta } from "./BriefMeta";
 import { BriefPlate } from "./BriefPlate";
 import { PressShell } from "./PressShell";
+import { RecommendedStrip } from "./RecommendedStrip";
 import { SlugRule, TARGET, UNDERLINE } from "./press";
 import { SectionRow } from "./SectionRow";
 
@@ -419,6 +420,10 @@ export function BriefPage() {
             </div>
           )}
         </section>
+      </div>
+
+      <div className="pt-12">
+        <RecommendedStrip />
       </div>
     </PressShell>
   );
