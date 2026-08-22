@@ -47,10 +47,20 @@ Respond with a single JSON object and nothing else, with exactly these keys:
              names.
   "subhead": one sentence on why this matters or what happens next. Do not
              restate the title.
-  "bullets": 4 or 5 strings, in this order: what is confirmed across
-             outlets; the hard numbers, if any; one specific attributable
-             detail; where outlets' framing or emphasis differs, naming the
+  "bullets": 4 or 5 items, in this order: what is confirmed across outlets;
+             the hard numbers, if any; one specific attributable detail;
+             where outlets' framing or emphasis differs, naming the
              outlets; what remains unresolved.
+
+             The first three are FACTS: each is an object
+             {"fact": "...", "quote": "..."}, where quote is copied
+             word-for-word from one outlet's line above -- not paraphrased,
+             not reworded. A quote that only restates the fact in different
+             words is not evidence; quote the actual line it comes from.
+
+             Items 4 and 5, when you include them, are plain strings: they
+             describe how outlets covered the story, not what any one of
+             them said, so there is no single line to quote.
   "people":  full names of people central to the story, spelled exactly as
              in the input. [] if none.
   "summary": 2 to 4 sentences of prose covering the same ground as the
@@ -148,6 +158,57 @@ def _fold(s: str) -> str:
     return re.sub(r"[\W_]+", " ", s.lower()).strip()
 
 
+# A quote this short (after folding) is not evidence -- it would rubber
+# stamp itself against almost any short phrase. Forces real surrounding
+# context, the same guard categorize.py applies to team/category quotes.
+_MIN_QUOTE_CHARS = 12
+# How many leading bullets are FACTS and therefore need a quote. The rest
+# (where framing differs, what remains unresolved) describe the coverage
+# rather than one outlet's words -- there is no single line to point at,
+# so nothing past this index is asked to cite one.
+_CITED_BULLETS = 3
+
+
+def _ground_bullets(bullets: list, haystack: str) -> list[str] | None:
+    """Keep only bullets whose evidence actually appears in the input.
+
+    Each of the first _CITED_BULLETS entries must arrive as
+    {"fact": ..., "quote": ...}; a quote that is missing, too short to be
+    more than a name, only restates the fact in different words, or is not
+    actually present in the input drops THAT bullet -- the same treatment
+    `people` gets below, one level up, because a fact is not proven by
+    existing, only by pointing at where it came from. Entries past that
+    index are plain prose and pass through unchecked: they were never
+    asked to quote one line, because they describe several at once.
+
+    None means nothing survived. That is a failed summary, not a thin one
+    -- brief.py reads these bullets as its confirmed facts, so a summary
+    with zero grounded ones would silently cost every section using it its
+    entire evidence. The caller retries it exactly as it would a torn shape.
+    """
+    kept: list[str] = []
+    for i, item in enumerate(bullets):
+        if i >= _CITED_BULLETS:
+            if isinstance(item, str) and item.strip():
+                kept.append(item.strip())
+            continue
+        if not isinstance(item, dict):
+            continue
+        fact, quote = item.get("fact"), item.get("quote")
+        if not (isinstance(fact, str) and fact.strip()):
+            continue
+        if not isinstance(quote, str):
+            continue
+        folded_quote = _fold(quote)
+        if (
+            len(folded_quote) >= _MIN_QUOTE_CHARS
+            and folded_quote != _fold(fact)
+            and folded_quote in haystack
+        ):
+            kept.append(fact.strip())
+    return kept or None
+
+
 def _validate(data, input_text: str) -> dict | None:
     """Shape-check the model's JSON; a clean dict, or None to reject.
 
@@ -164,19 +225,21 @@ def _validate(data, input_text: str) -> dict | None:
         return None
     if not (isinstance(subhead, str) and subhead.strip()):
         return None
-    if not (
-        isinstance(bullets, list)
-        and bullets
-        and all(isinstance(b, str) for b in bullets)
-    ):
+    if not (isinstance(bullets, list) and bullets):
         return None
     if not isinstance(people, list):
         return None
 
-    # Keep only names that appear in the input (folded on both sides, so
-    # the model's typographic hyphens still match our ASCII text). This one
-    # check removes most hallucinated people.
+    # Folded once, shared by both grounding checks below: the model's
+    # typographic hyphens and quotes still need to match our ASCII text.
     haystack = _fold(input_text)
+
+    bullets = _ground_bullets(bullets, haystack)
+    if bullets is None:
+        return None
+
+    # Keep only names that appear in the input. This one check removes
+    # most hallucinated people.
     people = [p for p in people if isinstance(p, str) and _fold(p) in haystack]
 
     # Tolerated rather than required, unlike every field above. The prose
@@ -191,7 +254,7 @@ def _validate(data, input_text: str) -> dict | None:
     return {
         "title": title.strip(),
         "subhead": subhead.strip(),
-        "bullets": [b.strip() for b in bullets],
+        "bullets": bullets,  # already grounded and stripped by _ground_bullets
         "people": people,
         "summary": summary,
     }
